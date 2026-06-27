@@ -25,7 +25,7 @@ raw_search = st.sidebar.text_input("Deep Research Search (e.g. PLS, REA, DRO)", 
 st.sidebar.markdown("---")
 st.sidebar.header("🎯 Navigation Matrix")
 app_mode = st.sidebar.selectbox("Choose App Workspace", [
-    "Automated Quant Fund Simulator",  # NEW DEFAULT WORKSPACE
+    "Automated Quant Fund Simulator",  
     "Trend Momentum Screener",
     "Fundamental Value Searcher",
     "WD Gann Mechanical Screener",
@@ -156,7 +156,9 @@ if app_mode == "Automated Quant Fund Simulator":
     # Simulated Parameters Setup
     st.sidebar.subheader("⚙️ Quant System Tuning")
     max_risk = st.sidebar.slider("Maximum Trailing Stop-Loss %", 3.0, 15.0, 7.5, step=0.5)
-    allocation_pool = st.sidebar.number_input("Total Sandbox Capital ($ AUD)", value=100000, step=5000)
+    
+    # FIXED HERE: Default changed from 100000 to 20000 permanently
+    allocation_pool = st.sidebar.number_input("Total Sandbox Capital ($ AUD)", value=20000, step=1000)
 
     with st.spinner("Executing rule engine across ASX 50 pool..."):
         data_pool = fetch_master_dataset_pool(ASX_50)
@@ -164,18 +166,12 @@ if app_mode == "Automated Quant Fund Simulator":
     if data_pool:
         res_df = pd.DataFrame(data_pool)
         
-        # --- QUANT ALGORITHM STRATEGY MATCHING ---
-        # Rule 1: Must be in a structural long-term bullish trend (50MA > 200MA)
-        # Rule 2: Gann Pivot structure must be in an upward swing expansion
         quant_targets = res_df[
             (res_df["is_bullish"] == True) & 
             (res_df["Gann Signal"].str.contains("UP-SWING"))
         ].copy()
 
-        # Sort by proximity to structural highs (tightest consolidation setups)
         quant_targets = quant_targets.sort_values(by="Dist 52W High %", ascending=True)
-        
-        # Isolate exactly the Top 5 Assets
         top_5_portfolio = quant_targets.head(5).copy()
         
         if not top_5_portfolio.empty:
@@ -184,9 +180,8 @@ if app_mode == "Automated Quant Fund Simulator":
             top_5_portfolio["Target Units Purchased"] = (per_stock_cash / top_5_portfolio["Price"]).astype(int)
             top_5_portfolio["Hard Stop-Loss Price"] = top_5_portfolio["Price"] * (1 - (max_risk / 100))
             
-            # KPI Summary Matrix Cards
             m1, m2, m3 = st.columns(3)
-            m1.metric("Active Capital Slots Used", f"5 / 5 Assets Loaded", "Fully Deployed")
+            m1.metric("Active Capital Slots Used", f"{len(top_5_portfolio)} / 5 Assets Loaded", "Fully Deployed")
             m2.metric("Sizing Weight Per Asset", f"${per_stock_cash:,.2f} AUD")
             m3.metric("System Exit Metric Active", f"-{max_risk}% Trailing Stop")
 
@@ -202,7 +197,6 @@ if app_mode == "Automated Quant Fund Simulator":
                 disabled=True, hide_index=True, use_container_width=True
             )
             
-            # Automated Monitor Logs Display Box
             st.markdown("---")
             st.subheader("🖥️ Autonomous Activity Logger")
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
