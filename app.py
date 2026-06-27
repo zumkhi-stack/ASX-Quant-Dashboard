@@ -98,6 +98,10 @@ def fetch_master_dataset_pool(ticker_list):
             df['50_MA'] = df['adjclose'].rolling(window=50).mean()
             df['200_MA'] = df['adjclose'].rolling(window=200).mean()
             latest_close = float(df['adjclose'].iloc[-1])
+            
+            # NEW: Track previous close as entry baseline to measure daily simulation swings
+            prev_close = float(df['adjclose'].iloc[-2]) if len(df) > 1 else latest_close
+            
             high_52w = float(df['high'].max())
             dist_to_high = ((high_52w - latest_close) / high_52w) * 100
             
@@ -134,6 +138,7 @@ def fetch_master_dataset_pool(ticker_list):
                 "Ticker": ticker,
                 "Chart Link": link_url,
                 "Name": raw_name,
+                "Entry Price": prev_close,
                 "Price": latest_close, 
                 "Dist 52W High %": dist_to_high, 
                 "Distance to Peak ($)": distance_usd,
@@ -156,8 +161,6 @@ if app_mode == "Automated Quant Fund Simulator":
     # Simulated Parameters Setup
     st.sidebar.subheader("⚙️ Quant System Tuning")
     max_risk = st.sidebar.slider("Maximum Trailing Stop-Loss %", 3.0, 15.0, 7.5, step=0.5)
-    
-    # FIXED HERE: Default changed from 100000 to 20000 permanently
     allocation_pool = st.sidebar.number_input("Total Sandbox Capital ($ AUD)", value=20000, step=1000)
 
     with st.spinner("Executing rule engine across ASX 50 pool..."):
@@ -177,22 +180,40 @@ if app_mode == "Automated Quant Fund Simulator":
         if not top_5_portfolio.empty:
             per_stock_cash = allocation_pool / 5
             top_5_portfolio["Allocated Capital"] = per_stock_cash
-            top_5_portfolio["Target Units Purchased"] = (per_stock_cash / top_5_portfolio["Price"]).astype(int)
-            top_5_portfolio["Hard Stop-Loss Price"] = top_5_portfolio["Price"] * (1 - (max_risk / 100))
+            top_5_portfolio["Units"] = (per_stock_cash / top_5_portfolio["Entry Price"]).astype(int)
+            top_5_portfolio["Hard Stop-Loss Price"] = top_5_portfolio["Entry Price"] * (1 - (max_risk / 100))
             
+            # --- NEW: CALCULATE LIVE PERFORMANCE METRICS ---
+            top_5_portfolio["Return %"] = ((top_5_portfolio["Price"] - top_5_portfolio["Entry Price"]) / top_5_portfolio["Entry Price"]) * 100
+            top_5_portfolio["Current P&L ($)"] = top_5_portfolio["Units"] * (top_5_portfolio["Price"] - top_5_portfolio["Entry Price"])
+            
+            total_pnl = top_5_portfolio["Current P&L ($)"].sum()
+            total_return = (total_pnl / allocation_pool) * 100
+            
+            # KPI Summary Matrix Cards upgraded with live Performance Delta indicators
             m1, m2, m3 = st.columns(3)
-            m1.metric("Active Capital Slots Used", f"{len(top_5_portfolio)} / 5 Assets Loaded", "Fully Deployed")
+            m1.metric("Active Capital Slots Used", f"{len(top_5_portfolio)} / 5 Loaded", "Fully Deployed")
             m2.metric("Sizing Weight Per Asset", f"${per_stock_cash:,.2f} AUD")
-            m3.metric("System Exit Metric Active", f"-{max_risk}% Trailing Stop")
+            
+            # Large Top-Level Performance Badge
+            if total_pnl >= 0:
+                m3.metric("Total Fund P&L", f"+${total_pnl:,.2f} AUD", f"🟢 +{total_return:.2f}%")
+            else:
+                m3.metric("Total Fund P&L", f"-${abs(total_pnl):,.2f} AUD", f"🔴 {total_return:.2f}%")
 
             st.subheader("💼 Active System Portfolios (Auto-Selected Entries)")
+            
+            # Format and Display table with highlighting rules
             st.data_editor(
-                top_5_portfolio[['Name', 'Price', 'Target Units Purchased', 'Allocated Capital', 'Hard Stop-Loss Price', 'Gann Signal']],
+                top_5_portfolio[['Name', 'Entry Price', 'Price', 'Units', 'Allocated Capital', 'Current P&L ($)', 'Return %', 'Hard Stop-Loss Price']],
                 column_config={
-                    "Price": st.column_config.NumberColumn("Current Execution Price", format="$%.2f"),
-                    "Allocated Capital": st.column_config.NumberColumn("Cash Capital Position", format="$%.2f"),
-                    "Hard Stop-Loss Price": st.column_config.NumberColumn("Auto-Exit Trigger Level", format="$%.2f"),
-                    "Target Units Purchased": st.column_config.NumberColumn("Calculated Volume Share")
+                    "Entry Price": st.column_config.NumberColumn("Simulated Entry", format="$%.2f"),
+                    "Price": st.column_config.NumberColumn("Current Price", format="$%.2f"),
+                    "Allocated Capital": st.column_config.NumberColumn("Position Value", format="$%.2f"),
+                    "Current P&L ($)": st.column_config.NumberColumn("P&L ($)", format="$%.2f"),
+                    "Return %": st.column_config.NumberColumn("Return", format="%.2f%%"),
+                    "Hard Stop-Loss Price": st.column_config.NumberColumn("Stop Level", format="$%.2f"),
+                    "Units": st.column_config.NumberColumn("Volume")
                 },
                 disabled=True, hide_index=True, use_container_width=True
             )
@@ -203,9 +224,9 @@ if app_mode == "Automated Quant Fund Simulator":
             
             with st.container(border=True):
                 st.code(
-                    f"[{now_str}] SYSTEM STATUS: SCANNING COMPLETE.\n"
-                    f"[{now_str}] PORTFOLIO ANALYSIS: Balanced array intact. 0 Exits triggered in current market matching.\n"
-                    f"[{now_str}] MONITOR LOOP Active: System evaluating price data stream for trailing risk bounds below hard stop levels.",
+                    f"[{now_str}] SYSTEM STATUS: MONITORING CURRENT ALLOCATIONS.\n"
+                    f"[{now_str}] PERFORMANCE UPDATE: Net Fund Variance is currently sitting at ${total_pnl:,.2f} AUD.\n"
+                    f"[{now_str}] MONITOR LOOP Active: Tracking current volatility channels against internal risk threshold structures.",
                     language="text"
                 )
         else:
