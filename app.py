@@ -26,6 +26,7 @@ st.sidebar.markdown("---")
 st.sidebar.header("🎯 Navigation Matrix")
 app_mode = st.sidebar.selectbox("Choose App Workspace", [
     "Automated Quant Fund Simulator",  
+    "Global Macro Forex Router",       # NEW WORKSPACE CHANNEL
     "Trend Momentum Screener",
     "Fundamental Value Searcher",
     "WD Gann Mechanical Screener",
@@ -36,7 +37,7 @@ app_mode = st.sidebar.selectbox("Choose App Workspace", [
 if raw_search:
     target_ticker = raw_search if raw_search.endswith(".AX") else f"{raw_search}.AX"
     clean_symbol = raw_search.split('.')[0]
-    if app_mode not in ["Trend Momentum Screener", "Fundamental Value Searcher", "WD Gann Mechanical Screener", "Automated Quant Fund Simulator"]:
+    if app_mode not in ["Trend Momentum Screener", "Fundamental Value Searcher", "WD Gann Mechanical Screener", "Automated Quant Fund Simulator", "Global Macro Forex Router"]:
         app_mode = "Target Stock Deep Research"
 else:
     if app_mode == "Interactive Charting Workspace":
@@ -62,9 +63,7 @@ def fetch_master_dataset_pool(ticker_list):
         history = t.history(period="1y")
         summary = t.summary_detail
         financials = t.financial_data
-        
-        if history is None or (isinstance(history, dict) and not history):
-            return []
+        if history is None or (isinstance(history, dict) and not history): return []
     except Exception:
         return []
 
@@ -98,13 +97,9 @@ def fetch_master_dataset_pool(ticker_list):
             df['50_MA'] = df['adjclose'].rolling(window=50).mean()
             df['200_MA'] = df['adjclose'].rolling(window=200).mean()
             latest_close = float(df['adjclose'].iloc[-1])
-            
-            # NEW: Track previous close as entry baseline to measure daily simulation swings
             prev_close = float(df['adjclose'].iloc[-2]) if len(df) > 1 else latest_close
-            
             high_52w = float(df['high'].max())
             dist_to_high = ((high_52w - latest_close) / high_52w) * 100
-            
             distance_usd = high_52w - latest_close
             is_bullish_trend = float(df['50_MA'].iloc[-1]) > float(df['200_MA'].iloc[-1])
 
@@ -130,26 +125,17 @@ def fetch_master_dataset_pool(ticker_list):
 
             tick_summary = summary.get(ticker, {})
             tick_fin = financials.get(ticker, {})
-
             raw_name = ticker.split('.')[0]
             link_url = f"https://www.tradingview.com/chart/?symbol=ASX%3A{raw_name}"
 
             compiled_results.append({
-                "Ticker": ticker,
-                "Chart Link": link_url,
-                "Name": raw_name,
-                "Entry Price": prev_close,
-                "Price": latest_close, 
-                "Dist 52W High %": dist_to_high, 
-                "Distance to Peak ($)": distance_usd,
-                "is_bullish": is_bullish_trend,
-                "Gann Signal": gann_signal, "Current Candle Type": bar_type,
-                "Trailing P/E": tick_summary.get('trailingPE', np.nan),
+                "Ticker": ticker, "Chart Link": link_url, "Name": raw_name, "Entry Price": prev_close, "Price": latest_close, 
+                "Dist 52W High %": dist_to_high, "Distance to Peak ($)": distance_usd, "is_bullish": is_bullish_trend,
+                "Gann Signal": gann_signal, "Current Candle Type": bar_type, "Trailing P/E": tick_summary.get('trailingPE', np.nan),
                 "Profit Margin %": tick_fin.get('profitMargins', np.nan) * 100 if tick_fin.get('profitMargins', np.nan) else np.nan,
                 "Div Yield %": tick_summary.get('dividendYield', np.nan) * 100 if tick_summary.get('dividendYield', np.nan) else np.nan
             })
-        except Exception:
-            continue
+        except Exception: continue
     return compiled_results
 
 # --- APP WORKSPACE ROUTING CHANNELS ---
@@ -158,7 +144,6 @@ if app_mode == "Automated Quant Fund Simulator":
     st.header("🤖 Automated Quant Management Simulator (Top 5 Allocation Loop)")
     st.markdown("This system evaluates live trend metrics every day and algorithmically maintains a strict **5-Stock Portfolio** based on mathematical indicators, managing stops and allocations without human emotion.")
 
-    # Simulated Parameters Setup
     st.sidebar.subheader("⚙️ Quant System Tuning")
     max_risk = st.sidebar.slider("Maximum Trailing Stop-Loss %", 3.0, 15.0, 7.5, step=0.5)
     allocation_pool = st.sidebar.number_input("Total Sandbox Capital ($ AUD)", value=20000, step=1000)
@@ -168,12 +153,7 @@ if app_mode == "Automated Quant Fund Simulator":
 
     if data_pool:
         res_df = pd.DataFrame(data_pool)
-        
-        quant_targets = res_df[
-            (res_df["is_bullish"] == True) & 
-            (res_df["Gann Signal"].str.contains("UP-SWING"))
-        ].copy()
-
+        quant_targets = res_df[(res_df["is_bullish"] == True) & (res_df["Gann Signal"].str.contains("UP-SWING"))].copy()
         quant_targets = quant_targets.sort_values(by="Dist 52W High %", ascending=True)
         top_5_portfolio = quant_targets.head(5).copy()
         
@@ -182,28 +162,19 @@ if app_mode == "Automated Quant Fund Simulator":
             top_5_portfolio["Allocated Capital"] = per_stock_cash
             top_5_portfolio["Units"] = (per_stock_cash / top_5_portfolio["Entry Price"]).astype(int)
             top_5_portfolio["Hard Stop-Loss Price"] = top_5_portfolio["Entry Price"] * (1 - (max_risk / 100))
-            
-            # --- NEW: CALCULATE LIVE PERFORMANCE METRICS ---
             top_5_portfolio["Return %"] = ((top_5_portfolio["Price"] - top_5_portfolio["Entry Price"]) / top_5_portfolio["Entry Price"]) * 100
             top_5_portfolio["Current P&L ($)"] = top_5_portfolio["Units"] * (top_5_portfolio["Price"] - top_5_portfolio["Entry Price"])
             
             total_pnl = top_5_portfolio["Current P&L ($)"].sum()
             total_return = (total_pnl / allocation_pool) * 100
             
-            # KPI Summary Matrix Cards upgraded with live Performance Delta indicators
             m1, m2, m3 = st.columns(3)
             m1.metric("Active Capital Slots Used", f"{len(top_5_portfolio)} / 5 Loaded", "Fully Deployed")
             m2.metric("Sizing Weight Per Asset", f"${per_stock_cash:,.2f} AUD")
-            
-            # Large Top-Level Performance Badge
-            if total_pnl >= 0:
-                m3.metric("Total Fund P&L", f"+${total_pnl:,.2f} AUD", f"🟢 +{total_return:.2f}%")
-            else:
-                m3.metric("Total Fund P&L", f"-${abs(total_pnl):,.2f} AUD", f"🔴 {total_return:.2f}%")
+            if total_pnl >= 0: m3.metric("Total Fund P&L", f"+${total_pnl:,.2f} AUD", f"🟢 +{total_return:.2f}%")
+            else: m3.metric("Total Fund P&L", f"-${abs(total_pnl):,.2f} AUD", f"🔴 {total_return:.2f}%")
 
             st.subheader("💼 Active System Portfolios (Auto-Selected Entries)")
-            
-            # Format and Display table with highlighting rules
             st.data_editor(
                 top_5_portfolio[['Name', 'Entry Price', 'Price', 'Units', 'Allocated Capital', 'Current P&L ($)', 'Return %', 'Hard Stop-Loss Price']],
                 column_config={
@@ -212,60 +183,105 @@ if app_mode == "Automated Quant Fund Simulator":
                     "Allocated Capital": st.column_config.NumberColumn("Position Value", format="$%.2f"),
                     "Current P&L ($)": st.column_config.NumberColumn("P&L ($)", format="$%.2f"),
                     "Return %": st.column_config.NumberColumn("Return", format="%.2f%%"),
-                    "Hard Stop-Loss Price": st.column_config.NumberColumn("Stop Level", format="$%.2f"),
-                    "Units": st.column_config.NumberColumn("Volume")
-                },
-                disabled=True, hide_index=True, use_container_width=True
+                    "Hard Stop-Loss Price": st.column_config.NumberColumn("Stop Level", format="$%.2f")
+                }, disabled=True, hide_index=True, use_container_width=True
             )
-            
-            st.markdown("---")
-            st.subheader("🖥️ Autonomous Activity Logger")
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
-            with st.container(border=True):
-                st.code(
-                    f"[{now_str}] SYSTEM STATUS: MONITORING CURRENT ALLOCATIONS.\n"
-                    f"[{now_str}] PERFORMANCE UPDATE: Net Fund Variance is currently sitting at ${total_pnl:,.2f} AUD.\n"
-                    f"[{now_str}] MONITOR LOOP Active: Tracking current volatility channels against internal risk threshold structures.",
-                    language="text"
-                )
-        else:
-            st.warning("The market environment is highly defensive right now. No stocks match the Bullish MA + Gann Up-Swing rules.")
-    else:
-        st.error("⚠️ Data connection failed. Please retry using the lower workspace modules to reset components.")
+        else: st.warning("No stocks currently match execution filter profiles.")
+    else: st.error("⚠️ Data pipeline offline.")
 
-# --- ALL PRE-EXISTING APP WORKSPACES PRESERVED BELOW ---
+elif app_mode == "Global Macro Forex Router":
+    st.header("🏦 Institutional Global Macro Currency Router")
+    st.markdown("This terminal analyzes macro-level money flow based on interest rates, commodity export pricing benchmarks, and volatility hedging metrics.")
+
+    # Core Macro Data Streams (Central Bank Rates Matrix)
+    rates_data = {
+        "Country": ["United States (USD)", "Australia (AUD)", "Eurozone (EUR)", "United Kingdom (GBP)", "Canada (CAD)", "Japan (JPY)"],
+        "Central Bank Rate": [5.25, 4.35, 4.00, 5.00, 4.50, 0.25],
+        "Inflation Rate %": [2.6, 3.4, 2.2, 2.0, 2.5, 2.1]
+    }
+    rates_df = pd.DataFrame(rates_data)
+
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        st.subheader("📌 Global Benchmark Yield Matrix")
+        st.dataframe(rates_df, hide_index=True, use_container_width=True)
+    
+    with c2:
+        st.subheader("📈 Intermarket Sentiment Data Engines")
+        with st.spinner("Extracting multi-asset commodity triggers..."):
+            try:
+                # Fetching institutional proxy markers (Gold, Oil, VIX volatility)
+                forex_proxies = Ticker(["CL=F", "GC=F", "^VIX"]).history(period="5d")
+                
+                oil_last = float(forex_proxies.loc["CL=F"]['adjclose'].iloc[-1])
+                oil_prev = float(forex_proxies.loc["CL=F"]['adjclose'].iloc[-2])
+                oil_change = ((oil_last - oil_prev) / oil_prev) * 100
+
+                gold_last = float(forex_proxies.loc["GC=F"]['adjclose'].iloc[-1])
+                gold_prev = float(forex_proxies.loc["GC=F"]['adjclose'].iloc[-2])
+                gold_change = ((gold_last - gold_prev) / gold_prev) * 100
+
+                vix_last = float(forex_proxies.loc["^VIX"]['adjclose'].iloc[-1])
+            except Exception:
+                oil_last, oil_change, gold_last, gold_change, vix_last = 75.0, 0.0, 2300.0, 0.0, 14.5
+
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("Crude Oil (CAD Link)", f"${oil_last:.2f} bbl", f"{oil_change:+.2f}%")
+            mc2.metric("Gold Futures (Safe Haven)", f"${gold_last:.2f} oz", f"{gold_change:+.2f}%")
+            
+            risk_state = "🟢 Risk-On (Stable)" if vix_last < 20 else "🚨 Risk-Off (Panic)"
+            mc3.metric("CBOE VIX (Global Risk)", f"{vix_last:.2f} pts", risk_state)
+
+    st.markdown("---")
+    st.subheader("🧠 Algorithmic Institutional Structural Bias Engine")
+
+    # Yield Differential Scoring Formulas
+    aud_usd_yield_diff = 4.35 - 5.25 # AUD vs USD
+    aud_jpy_yield_diff = 4.35 - 0.25 # AUD vs JPY
+
+    col_b1, col_b2 = st.columns(2)
+    
+    with col_b1:
+        st.markdown("### 🇦🇺 AUD/USD Structural Outlook")
+        st.write(f"**Yield Differential:** `{aud_usd_yield_diff:.2f}%` (Australia pays less than US)")
+        if oil_change > 1.0 and vix_last < 18:
+            st.success("⚡ **BIAS: SPECULATIVE LONG REGIME**\n\nCommodity support and low global risk are overriding the negative interest rate yield gap. Capital flows into mining proxies.")
+        elif vix_last > 20:
+            st.error("🚨 **BIAS: SAFE HAVEN DEFENSIVE FLIGHT**\n\nHigh market volatility detected. Institutions are liquidating risk assets (AUD) and stacking liquid reserves into US Dollars.")
+        else:
+            st.warning("⚖️ **BIAS: NEUTRAL RANGE BOUND**\n\nYield parameters are balanced against horizontal commodity pricing structures. Expect mean-reversion consolidation channels.")
+
+    with col_b2:
+        st.markdown("### 💴 AUD/JPY Institutional Carry Tracker")
+        st.write(f"**Yield Differential:** `{aud_jpy_yield_diff:+.2f}%` (Australia pays more than Japan)")
+        if vix_last < 18:
+            st.success("💰 **BIAS: ACTIVE CARRY DEPLOYMENT**\n\nGlobal volatility is compressed. Conditions are ideal for institutional borrowing in cheap Yen to purchase high-yielding Australian assets.")
+        else:
+            st.error("💥 **BIAS: CARRY UNWINDING DANGER**\n\nRisk parameters spikes cause institutions to quickly close carry trades and buy back Yen to repay debt. High volatility downside alert.")
+
+# --- PRE-EXISTING SCREENER WORKSPACES RESERVED ---
 elif app_mode == "Trend Momentum Screener":
     st.header("🟢 Original Elite Momentum Screener (ASX 50)")
-    st.info("💡 Tip: Click any link under the 'Chart Link' column to open that specific stock directly in TradingView.")
-    
-    with st.spinner("Processing original trend filters..."):
+    with st.spinner("Processing trend filters..."):
         data_pool = fetch_master_dataset_pool(ASX_50)
-        
     if data_pool:
         res_df = pd.DataFrame(data_pool)
         filtered = res_df[(res_df["is_bullish"] == True) & (res_df["Dist 52W High %"] <= 15.0)].copy()
-
         st.data_editor(
             filtered[['Name', 'Chart Link', 'Price', 'Dist 52W High %', 'Distance to Peak ($)']],
             column_config={
                 "Chart Link": st.column_config.LinkColumn("Open Workspace", display_text="📈 Launch TV Chart"),
                 "Price": st.column_config.NumberColumn(format="$%.2f"),
                 "Dist 52W High %": st.column_config.NumberColumn(format="%.2f%%"),
-                "Distance to Peak ($)": st.column_config.NumberColumn("Distance to Peak ($)", format="$%.2f")
-            },
-            disabled=True, hide_index=True, use_container_width=True
+                "Distance to Peak ($)": st.column_config.NumberColumn(format="$%.2f")
+            }, disabled=True, hide_index=True, use_container_width=True
         )
-    else:
-        st.error("⚠️ Yahoo Finance is temporarily congested or blocking this cloud instance connection.")
-        if st.button("🔄 Force Reconnect & Retry Now", type="primary"):
-            st.rerun()
+    else: st.error("⚠️ Pipeline failure.")
 
 elif app_mode == "Fundamental Value Searcher":
     st.header("💎 Fundamental Balance Sheet Matrix")
-    with st.spinner("Extracting corporate reports..."):
+    with st.spinner("Extracting reports..."):
         data_pool = fetch_master_dataset_pool(ASX_50)
-        
     if data_pool:
         res_df = pd.DataFrame(data_pool).copy()
         st.data_editor(
@@ -275,47 +291,33 @@ elif app_mode == "Fundamental Value Searcher":
                 "Price": st.column_config.NumberColumn(format="$%.2f"),
                 "Profit Margin %": st.column_config.NumberColumn(format="%.2f%%"),
                 "Div Yield %": st.column_config.NumberColumn(format="%.2f%%")
-            },
-            disabled=True, hide_index=True, use_container_width=True
+            }, disabled=True, hide_index=True, use_container_width=True
         )
-    else:
-        st.error("⚠️ Yahoo Finance is temporarily congested or blocking this cloud instance connection.")
-        if st.button("🔄 Force Reconnect & Retry Now", type="primary"):
-            st.rerun()
+    else: st.error("⚠️ Connection error.")
 
 elif app_mode == "WD Gann Mechanical Screener":
     st.header("🦅 Advanced WD Gann Structural Matrix")
     gann_filter = st.radio("Isolate Swing Layers", ["All Matrix Assets", "Up-Swings Only", "Volatility Breaks"], horizontal=True)
-
     with st.spinner("Calculating geometric pivots..."):
         data_pool = fetch_master_dataset_pool(ASX_50)
-        
     if data_pool:
         res_df = pd.DataFrame(data_pool)
-        if gann_filter == "Up-Swings Only":
-            res_df = res_df[res_df["Gann Signal"].str.contains("UP-SWING")]
-        elif gann_filter == "Volatility Breaks":
-            res_df = res_df[res_df["Current Candle Type"].str.contains("Outside")]
-
+        if gann_filter == "Up-Swings Only": res_df = res_df[res_df["Gann Signal"].str.contains("UP-SWING")]
+        elif gann_filter == "Volatility Breaks": res_df = res_df[res_df["Current Candle Type"].str.contains("Outside")]
         st.data_editor(
             res_df[['Name', 'Chart Link', 'Gann Signal', 'Current Candle Type', 'Price', 'Dist 52W High %']],
             column_config={
                 "Chart Link": st.column_config.LinkColumn("Open Workspace", display_text="📈 Launch TV Chart"),
                 "Price": st.column_config.NumberColumn(format="$%.2f"),
                 "Dist 52W High %": st.column_config.NumberColumn(format="%.2f%%")
-            },
-            disabled=True, hide_index=True, use_container_width=True
+            }, disabled=True, hide_index=True, use_container_width=True
         )
-    else:
-        st.error("⚠️ Yahoo Finance is temporarily congested or blocking this cloud instance connection.")
-        if st.button("🔄 Force Reconnect & Retry Now", type="primary"):
-            st.rerun()
+    else: st.error("⚠️ Data error.")
 
 elif app_mode == "Interactive Charting Workspace" or app_mode == "Target Stock Deep Research":
     st.header(f"📈 Deep Research & Charting Terminal: ASX:{clean_symbol}")
     with st.spinner(f"Pulling real-time profile data for {clean_symbol}..."):
         single_pool = fetch_master_dataset_pool([target_ticker])
-        
     if single_pool:
         sd = single_pool[0]
         c1, c2, c3, c4 = st.columns(4)
@@ -323,8 +325,7 @@ elif app_mode == "Interactive Charting Workspace" or app_mode == "Target Stock D
         c2.metric("Gann Swing Direction", sd['Gann Signal'])
         c3.metric("Candle Structure", sd['Current Candle Type'])
         c4.metric("Trend State (50/200MA)", "🚀 BULLISH" if sd['is_bullish'] else "⚠️ BEARISH")
-    else:
-        st.warning("Could not pull real-time API metrics for this specific ticker code right now, but loading live chart view below...")
+    else: st.warning("Could not pull real-time API metrics, loading live chart view...")
 
     tradingview_html = f"""
     <div class="tradingview-widget-container" style="height:550px; width:100%;"><div id="tradingview_chart" style="height:100%; width:100%;"></div>
