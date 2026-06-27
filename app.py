@@ -52,8 +52,8 @@ st.sidebar.markdown("---")
 st.sidebar.header("🚀 Personal Pine Scripts Gateway")
 st.sidebar.link_button(f"🔓 Open {clean_symbol} Workspace", tv_direct_url, type="primary", use_container_width=True)
 
-# --- MASTER PIPELINE ENGINE PRODUCING THE FULL WHEEL OF 24 ---
-@st.cache_data(ttl=90)
+# --- MASTER PIPELINE ENGINE ---
+@st.cache_data(ttl=300)  # Extended to 5 mins to help prevent morning server overloads
 def fetch_master_dataset_pool(ticker_list):
     compiled_results = []
     try:
@@ -61,6 +61,10 @@ def fetch_master_dataset_pool(ticker_list):
         history = t.history(period="1y")
         summary = t.summary_detail
         financials = t.financial_data
+        
+        # Check if we got valid data back from Yahoo
+        if history is None or (isinstance(history, dict) and not history):
+            return []
     except Exception:
         return []
 
@@ -97,9 +101,7 @@ def fetch_master_dataset_pool(ticker_list):
             high_52w = float(df['high'].max())
             dist_to_high = ((high_52w - latest_close) / high_52w) * 100
             
-            # Calculate absolute valued dollar distance
             distance_usd = high_52w - latest_close
-
             is_bullish_trend = float(df['50_MA'].iloc[-1]) > float(df['200_MA'].iloc[-1])
 
             df['prev_high'] = df['high'].shift(1)
@@ -150,8 +152,10 @@ def fetch_master_dataset_pool(ticker_list):
 if app_mode == "Trend Momentum Screener":
     st.header("🟢 Original Elite Momentum Screener (ASX 50)")
     st.info("💡 Tip: Click any link under the 'Chart Link' column to open that specific stock directly in TradingView.")
+    
     with st.spinner("Processing original trend filters..."):
         data_pool = fetch_master_dataset_pool(ASX_50)
+        
     if data_pool:
         res_df = pd.DataFrame(data_pool)
         filtered = res_df[(res_df["is_bullish"] == True) & (res_df["Dist 52W High %"] <= 15.0)].copy()
@@ -166,11 +170,16 @@ if app_mode == "Trend Momentum Screener":
             },
             disabled=True, hide_index=True, use_container_width=True
         )
+    else:
+        st.error("⚠️ Yahoo Finance is temporarily congested or blocking this cloud instance connection.")
+        if st.button("🔄 Force Reconnect & Retry Now", type="primary"):
+            st.rerun()
 
 elif app_mode == "Fundamental Value Searcher":
     st.header("💎 Fundamental Balance Sheet Matrix")
     with st.spinner("Extracting corporate reports..."):
         data_pool = fetch_master_dataset_pool(ASX_50)
+        
     if data_pool:
         res_df = pd.DataFrame(data_pool).copy()
         st.data_editor(
@@ -183,6 +192,10 @@ elif app_mode == "Fundamental Value Searcher":
             },
             disabled=True, hide_index=True, use_container_width=True
         )
+    else:
+        st.error("⚠️ Yahoo Finance is temporarily congested or blocking this cloud instance connection.")
+        if st.button("🔄 Force Reconnect & Retry Now", type="primary"):
+            st.rerun()
 
 elif app_mode == "WD Gann Mechanical Screener":
     st.header("🦅 Advanced WD Gann Structural Matrix")
@@ -190,6 +203,7 @@ elif app_mode == "WD Gann Mechanical Screener":
 
     with st.spinner("Calculating geometric pivots..."):
         data_pool = fetch_master_dataset_pool(ASX_50)
+        
     if data_pool:
         res_df = pd.DataFrame(data_pool)
         if gann_filter == "Up-Swings Only":
@@ -206,11 +220,16 @@ elif app_mode == "WD Gann Mechanical Screener":
             },
             disabled=True, hide_index=True, use_container_width=True
         )
+    else:
+        st.error("⚠️ Yahoo Finance is temporarily congested or blocking this cloud instance connection.")
+        if st.button("🔄 Force Reconnect & Retry Now", type="primary"):
+            st.rerun()
 
 elif app_mode == "Interactive Charting Workspace" or app_mode == "Target Stock Deep Research":
     st.header(f"📈 Deep Research & Charting Terminal: ASX:{clean_symbol}")
     with st.spinner(f"Pulling real-time profile data for {clean_symbol}..."):
         single_pool = fetch_master_dataset_pool([target_ticker])
+        
     if single_pool:
         sd = single_pool[0]
         c1, c2, c3, c4 = st.columns(4)
@@ -218,6 +237,8 @@ elif app_mode == "Interactive Charting Workspace" or app_mode == "Target Stock D
         c2.metric("Gann Swing Direction", sd['Gann Signal'])
         c3.metric("Candle Structure", sd['Current Candle Type'])
         c4.metric("Trend State (50/200MA)", "🚀 BULLISH" if sd['is_bullish'] else "⚠️ BEARISH")
+    else:
+        st.warning("Could not pull real-time API metrics for this specific ticker code right now, but loading live chart view below...")
 
     tradingview_html = f"""
     <div class="tradingview-widget-container" style="height:550px; width:100%;"><div id="tradingview_chart" style="height:100%; width:100%;"></div>
