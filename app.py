@@ -106,12 +106,18 @@ else:
 @st.cache_data(ttl=300)
 def fetch_master_dataset_pool(ticker_list):
     compiled_results = []
+    if not ticker_list:
+        return compiled_results
+        
     try:
         t = Ticker(ticker_list)
         history = t.history(period="1y")
+        # Handle case where single or multi items return valid dataframes
+        if history is None or (isinstance(history, dict) and not history) or (isinstance(history, pd.DataFrame) and history.empty): 
+            return []
+            
         summary = t.summary_detail
         financials = t.financial_data
-        if history is None or (isinstance(history, dict) and not history): return []
     except Exception:
         return []
 
@@ -134,74 +140,34 @@ def fetch_master_dataset_pool(ticker_list):
 
     for ticker in ticker_list:
         try:
+            # Flexible frame extraction for both multi-index and flat symbol datasets
             if isinstance(history.index, pd.MultiIndex):
-                if ticker not in history.index.levels[0]: continue
-                df = history.loc[ticker].dropna().copy()
+                # Check case variations just in case API returns lower/upper
+                tk_match = ticker
+                if ticker not in history.index.levels[0]:
+                    if ticker.lower() in history.index.levels[0]: tk_match = ticker.lower()
+                    elif ticker.upper() in history.index.levels[0]: tk_match = ticker.upper()
+                    else: continue
+                df = history.loc[tk_match].dropna().copy()
             else:
                 df = history.dropna().copy()
 
-            if df.empty or len(df) < 50: continue
+            if df.empty or len(df) < 10: continue
 
-            # Technical overlays
-            df['50_MA'] = df['adjclose'].rolling(window=50).mean()
-            df['200_MA'] = df['adjclose'].rolling(window=200).mean()
-            latest_close = float(df['adjclose'].iloc[-1])
-            prev_close = float(df['adjclose'].iloc[-2]) if len(df) > 1 else latest_close
+            # Dynamic price resolution field checking
+            close_col = 'adjclose' if 'adjclose' in df.columns else 'close'
+            
+            df['50_MA'] = df[close_col].rolling(window=min(50, len(df))).mean()
+            df['200_MA'] = df[close_col].rolling(window=min(200, len(df))).mean()
+            latest_close = float(df[close_col].iloc[-1])
+            prev_close = float(df[close_col].iloc[-2]) if len(df) > 1 else latest_close
             high_52w = float(df['high'].max())
-            dist_to_high = ((high_52w - latest_close) / high_52w) * 100
+            dist_to_high = ((high_52w - latest_close) / high_52w) * 100 if high_52w > 0 else 0
             distance_usd = high_52w - latest_close
-            is_bullish_trend = float(df['50_MA'].iloc[-1]) > float(df['200_MA'].iloc[-1])
+            is_bullish_trend = float(df['50_MA'].iloc[-1]) > float(df['200_MA'].iloc[-1]) if len(df) >= 50 else True
 
             # Candle structures
             df['prev_high'] = df['high'].shift(1)
             df['prev_low'] = df['low'].shift(1)
             last_row = df.iloc[-1]
-            h, l, ph, pl = last_row['high'], last_row['low'], last_row['prev_high'], last_row['prev_low']
-
-            if h > ph and l < pl: bar_type = "🟠 Outside Bar"
-            elif h <= ph and l >= pl: bar_type = "⚪ Inside Bar"
-            elif h > ph and l >= pl: bar_type = "🟢 Up Bar"
-            else: bar_type = "🔴 Down Bar"
-
-            # Gann System Mechanics
-            swing_dir = 1
-            for i in range(2, len(df)):
-                if df['high'].iloc[i] > df['high'].iloc[i-2] and swing_dir == -1: swing_dir = 1
-                elif df['low'].iloc[i] < df['low'].iloc[i-2] and swing_dir == 1: swing_dir = -1
-
-            gann_signal = "🟢 GANN UP-SWING" if swing_dir == 1 else "🚨 GANN DOWN-SWING"
-            if is_cycle_node: gann_signal += f" ⚡{node_type}"
-
-            tick_summary = summary.get(ticker, {}) if summary else {}
-            tick_fin = financials.get(ticker, {}) if financials else {}
-            raw_name = ticker.replace(".AX", "").replace("=X", "")
-            
-            # Smart URL Routing for TradingView redirects
-            if "=X" in ticker:
-                link_url = f"https://www.tradingview.com/chart/?symbol=FX:{raw_name}"
-            else:
-                link_url = f"https://www.tradingview.com/chart/?symbol=ASX:{raw_name}"
-
-            compiled_results.append({
-                "Ticker": ticker, "Chart Link": link_url, "Name": raw_name, "Entry Price": prev_close, "Price": latest_close, 
-                "Dist 52W High %": dist_to_high, "Distance to Peak ($)": distance_usd, "is_bullish": is_bullish_trend,
-                "Gann Signal": gann_signal, "Current Candle Type": bar_type, 
-                "Trailing P/E": tick_summary.get('trailingPE', np.nan),
-                "Profit Margin %": tick_fin.get('profitMargins', np.nan) * 100 if tick_fin.get('profitMargins', np.nan) else np.nan,
-                "Div Yield %": tick_summary.get('dividendYield', np.nan) * 100 if tick_summary.get('dividendYield', np.nan) else np.nan
-            })
-        except Exception: continue
-    return compiled_results
-
-# --- EXECUTE WORKSPACE ROUTING ---
-
-if app_mode == "Automated Quant Fund Simulator":
-    st.header(f"🤖 Multi-Asset Quant Management Simulator ({market_tier})")
-    st.sidebar.subheader("⚙️ Quant System Tuning")
-    max_risk = st.sidebar.slider("Maximum Trailing Stop-Loss %", 1.0, 15.0, 5.0, step=0.5)
-    allocation_pool = st.sidebar.number_input("Total Sandbox Capital ($ AUD)", value=20000, step=1000)
-
-    with st.spinner("Analyzing assets..."):
-        data_pool = fetch_master_dataset_pool(active_universe)
-    if data_pool:
-        res_df = pd
+            h, l, ph, pl = last_row['high'], last_row
