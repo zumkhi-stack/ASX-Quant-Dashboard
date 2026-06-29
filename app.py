@@ -112,7 +112,6 @@ def fetch_master_dataset_pool(ticker_list):
     try:
         t = Ticker(ticker_list)
         history = t.history(period="1y")
-        # Handle case where single or multi items return valid dataframes
         if history is None or (isinstance(history, dict) and not history) or (isinstance(history, pd.DataFrame) and history.empty): 
             return []
             
@@ -140,9 +139,7 @@ def fetch_master_dataset_pool(ticker_list):
 
     for ticker in ticker_list:
         try:
-            # Flexible frame extraction for both multi-index and flat symbol datasets
             if isinstance(history.index, pd.MultiIndex):
-                # Check case variations just in case API returns lower/upper
                 tk_match = ticker
                 if ticker not in history.index.levels[0]:
                     if ticker.lower() in history.index.levels[0]: tk_match = ticker.lower()
@@ -154,20 +151,8 @@ def fetch_master_dataset_pool(ticker_list):
 
             if df.empty or len(df) < 10: continue
 
-            # Dynamic price resolution field checking
             close_col = 'adjclose' if 'adjclose' in df.columns else 'close'
             
             df['50_MA'] = df[close_col].rolling(window=min(50, len(df))).mean()
             df['200_MA'] = df[close_col].rolling(window=min(200, len(df))).mean()
-            latest_close = float(df[close_col].iloc[-1])
-            prev_close = float(df[close_col].iloc[-2]) if len(df) > 1 else latest_close
-            high_52w = float(df['high'].max())
-            dist_to_high = ((high_52w - latest_close) / high_52w) * 100 if high_52w > 0 else 0
-            distance_usd = high_52w - latest_close
-            is_bullish_trend = float(df['50_MA'].iloc[-1]) > float(df['200_MA'].iloc[-1]) if len(df) >= 50 else True
-
-            # Candle structures
-            df['prev_high'] = df['high'].shift(1)
-            df['prev_low'] = df['low'].shift(1)
-            last_row = df.iloc[-1]
-            h, l, ph, pl = last_row['high'], last_row
+            latest
