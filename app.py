@@ -55,17 +55,30 @@ st.sidebar.header("🚀 Personal Pine Scripts Gateway")
 st.sidebar.link_button(f"🔓 Open {clean_symbol} Workspace", tv_direct_url, type="primary", use_container_width=True)
 
 # --- MASTER PIPELINE ENGINE ---
+import time  # Add this import at the very top of your script
+
 @st.cache_data(ttl=300)
 def fetch_master_dataset_pool(ticker_list):
     compiled_results = []
-    try:
-        t = Ticker(ticker_list)
-        history = t.history(period="1y")
-        summary = t.summary_detail
-        financials = t.financial_data
-        if history is None or (isinstance(history, dict) and not history): return []
-    except Exception:
-        return []
+    
+    # CHUNK PROCESSOR: Break the 50 stocks into smaller batches of 10
+    chunk_size = 10
+    for i in range(0, len(ticker_list), chunk_size):
+        chunk = ticker_list[i:i+chunk_size]
+        try:
+            t = Ticker(chunk)
+            history = t.history(period="1y")
+            summary = t.summary_detail
+            financials = t.financial_data
+            
+            # If the batch failed, don't crash, just jump to the next one
+            if history is None or (isinstance(history, dict) and not history): 
+                continue
+        except Exception:
+            continue
+            
+        # Give Yahoo's server a brief breath between batches
+        time.sleep(0.5)
 
     today = datetime.now()
     cm, cd = today.month, today.day
