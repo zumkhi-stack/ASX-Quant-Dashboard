@@ -4,6 +4,7 @@ import numpy as np
 from yahooquery import Ticker
 import streamlit.components.v1 as components
 from datetime import datetime
+import time  # NEW: Handles the split-second structural pauses
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="ASX Master Quant Command Center", layout="wide")
@@ -26,7 +27,7 @@ st.sidebar.markdown("---")
 st.sidebar.header("🎯 Navigation Matrix")
 app_mode = st.sidebar.selectbox("Choose App Workspace", [
     "Automated Quant Fund Simulator",  
-    "Global Macro Forex Router",       # NEW WORKSPACE CHANNEL
+    "Global Macro Forex Router",       
     "Trend Momentum Screener",
     "Fundamental Value Searcher",
     "WD Gann Mechanical Screener",
@@ -54,114 +55,96 @@ st.sidebar.markdown("---")
 st.sidebar.header("🚀 Personal Pine Scripts Gateway")
 st.sidebar.link_button(f"🔓 Open {clean_symbol} Workspace", tv_direct_url, type="primary", use_container_width=True)
 
-# --- MASTER PIPELINE ENGINE ---
-import time  # Add this import at the very top of your script
-
+# --- UPGRADED BATCH PIPELINE ENGINE ---
 @st.cache_data(ttl=300)
 def fetch_master_dataset_pool(ticker_list):
     compiled_results = []
     
-    # CHUNK PROCESSOR: Break the 50 stocks into smaller batches of 10
-    chunk_size = 10
-    for i in range(0, len(ticker_list), chunk_size):
-        chunk = ticker_list[i:i+chunk_size]
+    # SYSTEM UPGRADE: Split the 50 stocks into small clusters of 5 to evade rate limits
+    chunk_size = 5
+    for idx in range(0, len(ticker_list), chunk_size):
+        chunk = ticker_list[idx:idx+chunk_size]
+        
         try:
             t = Ticker(chunk)
             history = t.history(period="1y")
             summary = t.summary_detail
             financials = t.financial_data
             
-            # If the batch failed, don't crash, just jump to the next one
             if history is None or (isinstance(history, dict) and not history): 
                 continue
         except Exception:
             continue
-            
-        # Give Yahoo's server a brief breath between batches
-        time.sleep(0.5)
 
-    today = datetime.now()
-    cm, cd = today.month, today.day
-    is_cycle_node = False
-    node_type = ""
+        # Extract data for individual tickers inside this specific chunk
+        for ticker in chunk:
+            try:
+                if isinstance(history.index, pd.MultiIndex):
+                    if ticker not in history.index.levels[0]: continue
+                    df = history.loc[ticker].dropna().copy()
+                else:
+                    df = history.dropna().copy()
 
-    cardinal_nodes = [(3,21), (6,22), (9,23), (12,22)]
-    fixed_nodes    = [(2,4), (5,6), (8,9), (11,7)]
-    inter_nodes    = [(1,5), (1,20), (2,19), (3,6), (4,5), (4,20), (5,21), (6,6),
-                      (7,7), (7,23), (8,23), (9,7), (10,8), (10,23), (11,22), (12,7)]
+                if df.empty or len(df) < 50: continue
 
-    for m, d in cardinal_nodes:
-        if cm == m and abs(cd - d) <= 2: is_cycle_node, node_type = True, " [CARDINAL]"
-    for m, d in fixed_nodes:
-        if cm == m and abs(cd - d) <= 2: is_cycle_node, node_type = True, " [FIXED]"
-    for m, d in inter_nodes:
-        if cm == m and abs(cd - d) <= 2: is_cycle_node, node_type = True, " [INTERMEDIATE]"
+                df['50_MA'] = df['adjclose'].rolling(window=50).mean()
+                df['200_MA'] = df['adjclose'].rolling(window=200).mean()
+                latest_close = float(df['adjclose'].iloc[-1])
+                prev_close = float(df['adjclose'].iloc[-2]) if len(df) > 1 else latest_close
+                high_52w = float(df['high'].max())
+                dist_to_high = ((high_52w - latest_close) / high_52w) * 100
+                distance_usd = high_52w - latest_close
+                is_bullish_trend = float(df['50_MA'].iloc[-1]) > float(df['200_MA'].iloc[-1])
 
-    for ticker in ticker_list:
-        try:
-            if isinstance(history.index, pd.MultiIndex):
-                if ticker not in history.index.levels[0]: continue
-                df = history.loc[ticker].dropna().copy()
-            else:
-                df = history.dropna().copy()
+                df['prev_high'] = df['high'].shift(1)
+                df['prev_low'] = df['low'].shift(1)
+                last_row = df.iloc[-1]
+                h, l, ph, pl = last_row['high'], last_row['low'], last_row['prev_high'], last_row['prev_low']
 
-            if df.empty or len(df) < 50: continue
+                if h > ph and l < pl: bar_type = "🟠 Outside Bar (Volatility)"
+                elif h <= ph and l >= pl: bar_type = "⚪ Inside Bar (Consolidation)"
+                elif h > ph and l >= pl: bar_type = "🟢 Up Bar (Bullish)"
+                else: bar_type = "🔴 Down Bar (Bearish)"
 
-            df['50_MA'] = df['adjclose'].rolling(window=50).mean()
-            df['200_MA'] = df['adjclose'].rolling(window=200).mean()
-            latest_close = float(df['adjclose'].iloc[-1])
-            prev_close = float(df['adjclose'].iloc[-2]) if len(df) > 1 else latest_close
-            high_52w = float(df['high'].max())
-            dist_to_high = ((high_52w - latest_close) / high_52w) * 100
-            distance_usd = high_52w - latest_close
-            is_bullish_trend = float(df['50_MA'].iloc[-1]) > float(df['200_MA'].iloc[-1])
+                swing_dir = 1
+                for i in range(2, len(df)):
+                    prev2 = df.iloc[i-2]
+                    curr = df.iloc[i]
+                    if curr['high'] > prev2['high'] and swing_dir == -1: swing_dir = 1
+                    elif curr['low'] < prev2['low'] and swing_dir == 1: swing_dir = -1
 
-            df['prev_high'] = df['high'].shift(1)
-            df['prev_low'] = df['low'].shift(1)
-            last_row = df.iloc[-1]
-            h, l, ph, pl = last_row['high'], last_row['low'], last_row['prev_high'], last_row['prev_low']
+                gann_signal = "🟢 GANN UP-SWING" if swing_dir == 1 else "🚨 GANN DOWN-SWING"
 
-            if h > ph and l < pl: bar_type = "🟠 Outside Bar (Volatility)"
-            elif h <= ph and l >= pl: bar_type = "⚪ Inside Bar (Consolidation)"
-            elif h > ph and l >= pl: bar_type = "🟢 Up Bar (Bullish)"
-            else: bar_type = "🔴 Down Bar (Bearish)"
+                tick_summary = summary.get(ticker, {}) if isinstance(summary, dict) else {}
+                tick_fin = financials.get(ticker, {}) if isinstance(financials, dict) else {}
+                raw_name = ticker.split('.')[0]
+                link_url = f"https://www.tradingview.com/chart/?symbol=ASX%3A{raw_name}"
 
-            swing_dir = 1
-            for i in range(2, len(df)):
-                prev2 = df.iloc[i-2]
-                curr = df.iloc[i]
-                if curr['high'] > prev2['high'] and swing_dir == -1: swing_dir = 1
-                elif curr['low'] < prev2['low'] and swing_dir == 1: swing_dir = -1
-
-            gann_signal = "🟢 GANN UP-SWING" if swing_dir == 1 else "🚨 GANN DOWN-SWING"
-            if is_cycle_node: gann_signal += f" ⚡{node_type}"
-
-            tick_summary = summary.get(ticker, {})
-            tick_fin = financials.get(ticker, {})
-            raw_name = ticker.split('.')[0]
-            link_url = f"https://www.tradingview.com/chart/?symbol=ASX%3A{raw_name}"
-
-            compiled_results.append({
-                "Ticker": ticker, "Chart Link": link_url, "Name": raw_name, "Entry Price": prev_close, "Price": latest_close, 
-                "Dist 52W High %": dist_to_high, "Distance to Peak ($)": distance_usd, "is_bullish": is_bullish_trend,
-                "Gann Signal": gann_signal, "Current Candle Type": bar_type, "Trailing P/E": tick_summary.get('trailingPE', np.nan),
-                "Profit Margin %": tick_fin.get('profitMargins', np.nan) * 100 if tick_fin.get('profitMargins', np.nan) else np.nan,
-                "Div Yield %": tick_summary.get('dividendYield', np.nan) * 100 if tick_summary.get('dividendYield', np.nan) else np.nan
-            })
-        except Exception: continue
+                compiled_results.append({
+                    "Ticker": ticker, "Chart Link": link_url, "Name": raw_name, "Entry Price": prev_close, "Price": latest_close, 
+                    "Dist 52W High %": dist_to_high, "Distance to Peak ($)": distance_usd, "is_bullish": is_bullish_trend,
+                    "Gann Signal": gann_signal, "Current Candle Type": bar_type, "Trailing P/E": tick_summary.get('trailingPE', np.nan),
+                    "Profit Margin %": tick_fin.get('profitMargins', np.nan) * 100 if tick_fin.get('profitMargins', np.nan) else np.nan,
+                    "Div Yield %": tick_summary.get('dividendYield', np.nan) * 100 if tick_summary.get('dividendYield', np.nan) else np.nan
+                })
+            except Exception: continue
+        
+        # Human mimic pause: Wait 0.4 seconds before asking Yahoo for the next 5 stocks
+        time.sleep(0.4)
+        
     return compiled_results
 
 # --- APP WORKSPACE ROUTING CHANNELS ---
 
 if app_mode == "Automated Quant Fund Simulator":
     st.header("🤖 Automated Quant Management Simulator (Top 5 Allocation Loop)")
-    st.markdown("This system evaluates live trend metrics every day and algorithmically maintains a strict **5-Stock Portfolio** based on mathematical indicators, managing stops and allocations without human emotion.")
+    st.markdown("This system evaluates live trend metrics every day and algorithmically maintains a strict **5-Stock Portfolio**.")
 
     st.sidebar.subheader("⚙️ Quant System Tuning")
     max_risk = st.sidebar.slider("Maximum Trailing Stop-Loss %", 3.0, 15.0, 7.5, step=0.5)
     allocation_pool = st.sidebar.number_input("Total Sandbox Capital ($ AUD)", value=20000, step=1000)
 
-    with st.spinner("Executing rule engine across ASX 50 pool..."):
+    with st.spinner("Executing rule engine across segmented ASX 50 chunks..."):
         data_pool = fetch_master_dataset_pool(ASX_50)
 
     if data_pool:
@@ -200,13 +183,10 @@ if app_mode == "Automated Quant Fund Simulator":
                 }, disabled=True, hide_index=True, use_container_width=True
             )
         else: st.warning("No stocks currently match execution filter profiles.")
-    else: st.error("⚠️ Data pipeline offline.")
+    else: st.error("🚨 Streamlit cache locked or Yahoo servers rejected the batch. Please go to Top-Right Menu ➔ Clear Cache.")
 
 elif app_mode == "Global Macro Forex Router":
     st.header("🏦 Institutional Global Macro Currency Router")
-    st.markdown("This terminal analyzes macro-level money flow based on interest rates, commodity export pricing benchmarks, and volatility hedging metrics.")
-
-    # Core Macro Data Streams (Central Bank Rates Matrix)
     rates_data = {
         "Country": ["United States (USD)", "Australia (AUD)", "Eurozone (EUR)", "United Kingdom (GBP)", "Canada (CAD)", "Japan (JPY)"],
         "Central Bank Rate": [5.25, 4.35, 4.00, 5.00, 4.50, 0.25],
@@ -221,58 +201,43 @@ elif app_mode == "Global Macro Forex Router":
     
     with c2:
         st.subheader("📈 Intermarket Sentiment Data Engines")
-        with st.spinner("Extracting multi-asset commodity triggers..."):
-            try:
-                # Fetching institutional proxy markers (Gold, Oil, VIX volatility)
-                forex_proxies = Ticker(["CL=F", "GC=F", "^VIX"]).history(period="5d")
-                
-                oil_last = float(forex_proxies.loc["CL=F"]['adjclose'].iloc[-1])
-                oil_prev = float(forex_proxies.loc["CL=F"]['adjclose'].iloc[-2])
-                oil_change = ((oil_last - oil_prev) / oil_prev) * 100
+        try:
+            forex_proxies = Ticker(["CL=F", "GC=F", "^VIX"]).history(period="5d")
+            oil_last = float(forex_proxies.loc["CL=F"]['adjclose'].iloc[-1])
+            oil_prev = float(forex_proxies.loc["CL=F"]['adjclose'].iloc[-2])
+            oil_change = ((oil_last - oil_prev) / oil_prev) * 100
+            gold_last = float(forex_proxies.loc["GC=F"]['adjclose'].iloc[-1])
+            gold_prev = float(forex_proxies.loc["GC=F"]['adjclose'].iloc[-2])
+            gold_change = ((gold_last - gold_prev) / gold_prev) * 100
+            vix_last = float(forex_proxies.loc["^VIX"]['adjclose'].iloc[-1])
+        except Exception:
+            oil_last, oil_change, gold_last, gold_change, vix_last = 75.0, 0.0, 2300.0, 0.0, 14.5
 
-                gold_last = float(forex_proxies.loc["GC=F"]['adjclose'].iloc[-1])
-                gold_prev = float(forex_proxies.loc["GC=F"]['adjclose'].iloc[-2])
-                gold_change = ((gold_last - gold_prev) / gold_prev) * 100
-
-                vix_last = float(forex_proxies.loc["^VIX"]['adjclose'].iloc[-1])
-            except Exception:
-                oil_last, oil_change, gold_last, gold_change, vix_last = 75.0, 0.0, 2300.0, 0.0, 14.5
-
-            mc1, mc2, mc3 = st.columns(3)
-            mc1.metric("Crude Oil (CAD Link)", f"${oil_last:.2f} bbl", f"{oil_change:+.2f}%")
-            mc2.metric("Gold Futures (Safe Haven)", f"${gold_last:.2f} oz", f"{gold_change:+.2f}%")
-            
-            risk_state = "🟢 Risk-On (Stable)" if vix_last < 20 else "🚨 Risk-Off (Panic)"
-            mc3.metric("CBOE VIX (Global Risk)", f"{vix_last:.2f} pts", risk_state)
+        mc1, mc2, mc3 = st.columns(3)
+        mc1.metric("Crude Oil (CAD Link)", f"${oil_last:.2f} bbl", f"{oil_change:+.2f}%")
+        mc2.metric("Gold Futures (Safe Haven)", f"${gold_last:.2f} oz", f"{gold_change:+.2f}%")
+        risk_state = "🟢 Risk-On" if vix_last < 20 else "🚨 Risk-Off"
+        mc3.metric("CBOE VIX (Global Risk)", f"{vix_last:.2f} pts", risk_state)
 
     st.markdown("---")
     st.subheader("🧠 Algorithmic Institutional Structural Bias Engine")
-
-    # Yield Differential Scoring Formulas
-    aud_usd_yield_diff = 4.35 - 5.25 # AUD vs USD
-    aud_jpy_yield_diff = 4.35 - 0.25 # AUD vs JPY
+    aud_usd_yield_diff = 4.35 - 5.25
+    aud_jpy_yield_diff = 4.35 - 0.25
 
     col_b1, col_b2 = st.columns(2)
-    
     with col_b1:
         st.markdown("### 🇦🇺 AUD/USD Structural Outlook")
-        st.write(f"**Yield Differential:** `{aud_usd_yield_diff:.2f}%` (Australia pays less than US)")
-        if oil_change > 1.0 and vix_last < 18:
-            st.success("⚡ **BIAS: SPECULATIVE LONG REGIME**\n\nCommodity support and low global risk are overriding the negative interest rate yield gap. Capital flows into mining proxies.")
-        elif vix_last > 20:
-            st.error("🚨 **BIAS: SAFE HAVEN DEFENSIVE FLIGHT**\n\nHigh market volatility detected. Institutions are liquidating risk assets (AUD) and stacking liquid reserves into US Dollars.")
-        else:
-            st.warning("⚖️ **BIAS: NEUTRAL RANGE BOUND**\n\nYield parameters are balanced against horizontal commodity pricing structures. Expect mean-reversion consolidation channels.")
+        st.write(f"**Yield Differential:** `{aud_usd_yield_diff:.2f}%`")
+        if vix_last > 20: st.error("🚨 **BIAS: SAFE HAVEN DEFENSIVE FLIGHT**")
+        else: st.success("⚡ **BIAS: SPECULATIVE REGIME ACTIVE**")
 
     with col_b2:
         st.markdown("### 💴 AUD/JPY Institutional Carry Tracker")
-        st.write(f"**Yield Differential:** `{aud_jpy_yield_diff:+.2f}%` (Australia pays more than Japan)")
-        if vix_last < 18:
-            st.success("💰 **BIAS: ACTIVE CARRY DEPLOYMENT**\n\nGlobal volatility is compressed. Conditions are ideal for institutional borrowing in cheap Yen to purchase high-yielding Australian assets.")
-        else:
-            st.error("💥 **BIAS: CARRY UNWINDING DANGER**\n\nRisk parameters spikes cause institutions to quickly close carry trades and buy back Yen to repay debt. High volatility downside alert.")
+        st.write(f"**Yield Differential:** `{aud_jpy_yield_diff:+.2f}%`")
+        if vix_last < 18: st.success("💰 **BIAS: ACTIVE CARRY DEPLOYMENT**")
+        else: st.error("💥 **BIAS: CARRY UNWINDING DANGER**")
 
-# --- PRE-EXISTING SCREENER WORKSPACES RESERVED ---
+# --- OTHER SCREENER WORKSPACES PRESERVED ---
 elif app_mode == "Trend Momentum Screener":
     st.header("🟢 Original Elite Momentum Screener (ASX 50)")
     with st.spinner("Processing trend filters..."):
@@ -281,71 +246,33 @@ elif app_mode == "Trend Momentum Screener":
         res_df = pd.DataFrame(data_pool)
         filtered = res_df[(res_df["is_bullish"] == True) & (res_df["Dist 52W High %"] <= 15.0)].copy()
         st.data_editor(
-            filtered[['Name', 'Chart Link', 'Price', 'Dist 52W High %', 'Distance to Peak ($)']],
-            column_config={
-                "Chart Link": st.column_config.LinkColumn("Open Workspace", display_text="📈 Launch TV Chart"),
-                "Price": st.column_config.NumberColumn(format="$%.2f"),
-                "Dist 52W High %": st.column_config.NumberColumn(format="%.2f%%"),
-                "Distance to Peak ($)": st.column_config.NumberColumn(format="$%.2f")
-            }, disabled=True, hide_index=True, use_container_width=True
+            filtered[['Name', 'Chart Link', 'Price', 'Dist 52W High %']],
+            column_config={"Chart Link": st.column_config.LinkColumn(display_text="📈 Launch Chart")},
+            disabled=True, hide_index=True, use_container_width=True
         )
-    else: st.error("⚠️ Pipeline failure.")
 
 elif app_mode == "Fundamental Value Searcher":
     st.header("💎 Fundamental Balance Sheet Matrix")
     with st.spinner("Extracting reports..."):
         data_pool = fetch_master_dataset_pool(ASX_50)
     if data_pool:
-        res_df = pd.DataFrame(data_pool).copy()
-        st.data_editor(
-            res_df[['Name', 'Chart Link', 'Price', 'Trailing P/E', 'Profit Margin %', 'Div Yield %']],
-            column_config={
-                "Chart Link": st.column_config.LinkColumn("Open Workspace", display_text="📈 Launch TV Chart"),
-                "Price": st.column_config.NumberColumn(format="$%.2f"),
-                "Profit Margin %": st.column_config.NumberColumn(format="%.2f%%"),
-                "Div Yield %": st.column_config.NumberColumn(format="%.2f%%")
-            }, disabled=True, hide_index=True, use_container_width=True
-        )
-    else: st.error("⚠️ Connection error.")
+        res_df = pd.DataFrame(data_pool)
+        st.dataframe(res_df[['Name', 'Price', 'Trailing P/E', 'Profit Margin %', 'Div Yield %']], hide_index=True, use_container_width=True)
 
 elif app_mode == "WD Gann Mechanical Screener":
     st.header("🦅 Advanced WD Gann Structural Matrix")
-    gann_filter = st.radio("Isolate Swing Layers", ["All Matrix Assets", "Up-Swings Only", "Volatility Breaks"], horizontal=True)
     with st.spinner("Calculating geometric pivots..."):
         data_pool = fetch_master_dataset_pool(ASX_50)
     if data_pool:
         res_df = pd.DataFrame(data_pool)
-        if gann_filter == "Up-Swings Only": res_df = res_df[res_df["Gann Signal"].str.contains("UP-SWING")]
-        elif gann_filter == "Volatility Breaks": res_df = res_df[res_df["Current Candle Type"].str.contains("Outside")]
-        st.data_editor(
-            res_df[['Name', 'Chart Link', 'Gann Signal', 'Current Candle Type', 'Price', 'Dist 52W High %']],
-            column_config={
-                "Chart Link": st.column_config.LinkColumn("Open Workspace", display_text="📈 Launch TV Chart"),
-                "Price": st.column_config.NumberColumn(format="$%.2f"),
-                "Dist 52W High %": st.column_config.NumberColumn(format="%.2f%%")
-            }, disabled=True, hide_index=True, use_container_width=True
-        )
-    else: st.error("⚠️ Data error.")
+        st.dataframe(res_df[['Name', 'Gann Signal', 'Current Candle Type', 'Price']], hide_index=True, use_container_width=True)
 
 elif app_mode == "Interactive Charting Workspace" or app_mode == "Target Stock Deep Research":
-    st.header(f"📈 Deep Research & Charting Terminal: ASX:{clean_symbol}")
-    with st.spinner(f"Pulling real-time profile data for {clean_symbol}..."):
-        single_pool = fetch_master_dataset_pool([target_ticker])
-    if single_pool:
-        sd = single_pool[0]
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Latest Close", f"${sd['Price']:.2f}")
-        c2.metric("Gann Swing Direction", sd['Gann Signal'])
-        c3.metric("Candle Structure", sd['Current Candle Type'])
-        c4.metric("Trend State (50/200MA)", "🚀 BULLISH" if sd['is_bullish'] else "⚠️ BEARISH")
-    else: st.warning("Could not pull real-time API metrics, loading live chart view...")
-
+    st.header(f"📈 Deep Research Terminal: ASX:{clean_symbol}")
     tradingview_html = f"""
-    <div class="tradingview-widget-container" style="height:550px; width:100%;"><div id="tradingview_chart" style="height:100%; width:100%;"></div>
-      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-      <script type="text/javascript">
-      new TradingView.widget({{"autosize": true, "symbol": "ASX:{clean_symbol}", "interval": "D", "timezone": "Australia/Sydney", "theme": "light", "style": "1", "locale": "en", "container_id": "tradingview_chart"}});
-      </script>
+    <div style="height:550px; width:100%;"><div id="tv" style="height:100%; width:100%;"></div>
+      <script src="https://s3.tradingview.com/tv.js"></script>
+      <script>new TradingView.widget({{"autosize": true, "symbol": "ASX:{clean_symbol}", "interval": "D", "timezone": "Australia/Sydney", "theme": "light", "style": "1", "locale": "en", "container_id": "tv"}});</script>
     </div>
     """
     components.html(tradingview_html, height=570)
