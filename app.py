@@ -9,7 +9,34 @@ from datetime import datetime
 st.set_page_config(page_title="ASX Master Quant Command Center", layout="wide")
 st.title("📊 ASX Master Quantitative & Geometric Command Center")
 
-# --- CORE DATA TIERS ---
+# --- GLOBAL MARKET TICKER TAPE (Australia, USA, India) ---
+# This injects a lightweight TradingView streaming widget at the top of the app
+ticker_tape_html = """
+<div class="tradingview-widget-container">
+  <div class="tradingview-widget-container__widget"></div>
+  <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+  {
+  "symbols": [
+    {"proName": "INDEX:XJO", "title": "Australia (ASX 200)"},
+    {"proName": "FOREX:AUDUSD", "title": "AUD / USD"},
+    {"proName": "INDEX:SPX", "title": "USA (S&P 500)"},
+    {"proName": "INDEX:IXIC", "title": "USA (Nasdaq)"},
+    {"proName": "INDEX:DJI", "title": "USA (Dow 30)"},
+    {"proName": "INDEX:NIFTY", "title": "India (Nifty 50)"},
+    {"proName": "INDEX:SENSEX", "title": "India (Sensex)"}
+  ],
+  "showSymbolLogo": true,
+  "colorTheme": "light",
+  "isTransparent": false,
+  "displayMode": "adaptive",
+  "locale": "en"
+}
+  </script>
+</div>
+"""
+components.html(ticker_tape_html, height=50)
+
+# --- INDEX MEMBERSHIP MATRICES ---
 ASX_50 = [
     "BHP.AX", "CBA.AX", "WBC.AX", "NAB.AX", "ANZ.AX", "MQG.AX", "WES.AX", "RIO.AX", "FMG.AX", "CSL.AX",
     "WDS.AX", "TLS.AX", "TCL.AX", "WOW.AX", "QBE.AX", "GMG.AX", "MIN.AX", "APA.AX", "QAN.AX", "SPK.AX",
@@ -18,7 +45,39 @@ ASX_50 = [
     "AZJ.AX", "A2M.AX", "AMP.AX", "ANN.AX", "AST.AX", "ALX.AX", "EVN.AX", "IAG.AX", "MPL.AX", "SUN.AX"
 ]
 
-# --- SIDEBAR MATRICES & DYNAMIC SEARCH ---
+ASX_100_EXTENSIONS = [
+    "ALU.AX", "AWC.AX", "ANN.AX", "APE.AX", "ARB.AX", "ASB.AX", "BOA.AX", "BPT.AX", "BRG.AX", "BSL.AX",
+    "BWP.AX", "BXB.AX", "CAR.AX", "CGF.AX", "CHC.AX", "CHORUS.AX", "CIW.AX", "CLW.AX", "CMW.AX", "CNI.AX",
+    "CNU.AX", "COL.AX", "CPU.AX", "CQR.AX", "CSR.AX", "CTX.AX", "CWN.AX", "CWY.AX", "CYB.AX", "DLX.AX",
+    "DOW.AX", "DRR.AX", "DXS.AX", "ELD.AX", "FLT.AX", "FPH.AX", "GMD.AX", "GOZ.AX", "GPT.AX", "IFL.AX"
+]
+
+ASX_200_EXTENSIONS = [
+    "A2B.AX", "AUB.AX", "AD8.AX", "AGL.AX", "AIN.AX", "ALK.AX", "AMI.AX", "AMP.AX", "ANN.AX", "ANZ.AX",
+    "AO1.AX", "APA.AX", "APE.AX", "API.AX", "APM.AX", "APX.AX", "ARB.AX", "ASB.AX", "ASM.AX", "ASO.AX",
+    "AST.AX", "ASX.AX", "AUB.AX", "AUZ.AX", "AVH.AX", "AWC.AX", "AWI.AX", "AX1.AX", "AZS.AX", "BFL.AX",
+    "BGA.AX", "BGL.AX", "BHP.AX", "BKL.AX", "BKW.AX", "BLX.AX", "BMN.AX", "BOA.AX", "BOQ.AX", "BPT.AX",
+    "BRG.AX", "BSL.AX", "BTI.AX", "BWP.AX", "BXB.AX", "CAA.AX", "CAR.AX", "CBA.AX", "CCX.AX", "CDP.AX",
+    "CDV.AX", "CE1.AX", "CEN.AX", "CGC.AX", "CGF.AX", "CHC.AX", "CHX.AX", "CHORUS.AX", "CIM.AX", "CIN.AX",
+    "CIP.AX", "CIW.AX", "CLE.AX", "CLH.AX", "CLW.AX", "CMW.AX", "CNI.AX", "CNU.AX", "COH.AX", "COL.AX",
+    "COY.AX", "CPO.AX", "CPU.AX", "CQR.AX", "CRN.AX", "CSL.AX", "CSR.AX", "CTD.AX", "CU6.AX", "CUV.AX",
+    "CVW.AX", "CWN.AX", "CWP.AX", "CWY.AX", "CYB.AX", "CYG.AX", "D2O.AX", "DCN.AX", "DDR.AX", "DEG.AX",
+    "DFM.AX", "DGH.AX", "DHG.AX", "DJW.AX", "DLI.AX", "DLX.AX", "DMP.AX", "DOW.AX", "DRE.AX", "DRR.AX"
+]
+
+# --- SIDEBAR MATRICES & MARKET DEFINITION ---
+st.sidebar.header("🛡️ Portfolio Universe Selector")
+market_tier = st.sidebar.selectbox("Choose Core Market Target", ["ASX 50 Blue Chips", "ASX 100 Mid-Caps", "ASX 200 Total Index"])
+
+# Assign universe arrays based on selection
+if market_tier == "ASX 50 Blue Chips":
+    active_universe = ASX_50
+elif market_tier == "ASX 100 Mid-Caps":
+    active_universe = list(set(ASX_50 + ASX_100_EXTENSIONS))
+else:
+    active_universe = list(set(ASX_50 + ASX_100_EXTENSIONS + ASX_200_EXTENSIONS))
+
+st.sidebar.markdown("---")
 st.sidebar.header("🔍 Global Market Router")
 raw_search = st.sidebar.text_input("Deep Research Search (e.g. PLS, REA, DRO)", "").strip().upper()
 
@@ -26,7 +85,7 @@ st.sidebar.markdown("---")
 st.sidebar.header("🎯 Navigation Matrix")
 app_mode = st.sidebar.selectbox("Choose App Workspace", [
     "Automated Quant Fund Simulator",  
-    "Global Macro Forex Router",       # <-- Restored selection path
+    "Global Macro Forex Router",       
     "Trend Momentum Screener",
     "Fundamental Value Searcher",
     "WD Gann Mechanical Screener",
@@ -41,12 +100,12 @@ if raw_search:
         app_mode = "Target Stock Deep Research"
 else:
     if app_mode == "Interactive Charting Workspace":
-        ticker_choice = st.sidebar.selectbox("Select Core Portfolio Ticker", ASX_50)
+        ticker_choice = st.sidebar.selectbox("Select Active Ticker Pool Asset", active_universe)
         clean_symbol = ticker_choice.split('.')[0]
         target_ticker = ticker_choice
     else:
-        target_ticker = "BHP.AX"
-        clean_symbol = "BHP"
+        target_ticker = active_universe[0]
+        clean_symbol = target_ticker.split('.')[0]
 
 tv_direct_url = f"https://www.tradingview.com/chart/?symbol=ASX%3A{clean_symbol}"
 
@@ -141,15 +200,15 @@ def fetch_master_dataset_pool(ticker_list):
 # --- APP WORKSPACE ROUTING CHANNELS ---
 
 if app_mode == "Automated Quant Fund Simulator":
-    st.header("🤖 Automated Quant Management Simulator (Top 5 Allocation Loop)")
-    st.markdown("This system evaluates live trend metrics every day and algorithmically maintains a strict **5-Stock Portfolio** based on mathematical indicators, managing stops and allocations without human emotion.")
+    st.header(f"🤖 Automated Quant Management Simulator ({market_tier} Pool)")
+    st.markdown("This system evaluates live trend metrics and algorithmically maintains a strict **5-Stock Portfolio** across your assigned universe matrix.")
 
     st.sidebar.subheader("⚙️ Quant System Tuning")
     max_risk = st.sidebar.slider("Maximum Trailing Stop-Loss %", 3.0, 15.0, 7.5, step=0.5)
     allocation_pool = st.sidebar.number_input("Total Sandbox Capital ($ AUD)", value=20000, step=1000)
 
-    with st.spinner("Executing rule engine across ASX 50 pool..."):
-        data_pool = fetch_master_dataset_pool(ASX_50)
+    with st.spinner(f"Executing rule engine across selected {market_tier} pool..."):
+        data_pool = fetch_master_dataset_pool(active_universe)
 
     if data_pool:
         res_df = pd.DataFrame(data_pool)
@@ -169,7 +228,7 @@ if app_mode == "Automated Quant Fund Simulator":
             total_return = (total_pnl / allocation_pool) * 100
             
             m1, m2, m3 = st.columns(3)
-            m1.metric("Active Capital Slots Used", f"{len(top_5_portfolio)} / 5 Loaded", "Fully Deployed")
+            m1.metric("Active Capital Slots Used", f"{len(top_5_portfolio)} / 5 Loaded")
             m2.metric("Sizing Weight Per Asset", f"${per_stock_cash:,.2f} AUD")
             if total_pnl >= 0: m3.metric("Total Fund P&L", f"+${total_pnl:,.2f} AUD", f"🟢 +{total_return:.2f}%")
             else: m3.metric("Total Fund P&L", f"-${abs(total_pnl):,.2f} AUD", f"🔴 {total_return:.2f}%")
@@ -191,61 +250,17 @@ if app_mode == "Automated Quant Fund Simulator":
 
 elif app_mode == "Global Macro Forex Router":
     st.header("🏦 Institutional Global Macro Currency Router")
-    st.markdown("Macro tracking architecture for evaluating key interest yield parameters.")
     rates_data = {
-        "Country": ["United States (USD)", "Australia (AUD)", "Eurozone (EUR)", "United Kingdom (GBP)", "Canada (CAD)", "Japan (JPY)"],
-        "Central Bank Rate": [5.25, 4.35, 4.00, 5.00, 4.50, 0.25],
-        "Inflation Rate %": [2.6, 3.4, 2.2, 2.0, 2.5, 2.1]
+        "Country": ["United States (USD)", "Australia (AUD)", "Eurozone (EUR)", "United Kingdom (GBP)", "Japan (JPY)"],
+        "Central Bank Rate": [5.25, 4.35, 4.00, 5.00, 0.25],
+        "Inflation Rate %": [2.6, 3.4, 2.2, 2.0, 2.1]
     }
-    rates_df = pd.DataFrame(rates_data)
-
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        st.subheader("📌 Global Benchmark Yield Matrix")
-        st.dataframe(rates_df, hide_index=True, use_container_width=True)
-    
-    with c2:
-        st.subheader("📈 Intermarket Sentiment Data Engines")
-        try:
-            forex_proxies = Ticker(["CL=F", "GC=F", "^VIX"]).history(period="5d")
-            oil_last = float(forex_proxies.loc["CL=F"]['adjclose'].iloc[-1])
-            oil_prev = float(forex_proxies.loc["CL=F"]['adjclose'].iloc[-2])
-            oil_change = ((oil_last - oil_prev) / oil_prev) * 100
-            gold_last = float(forex_proxies.loc["GC=F"]['adjclose'].iloc[-1])
-            gold_prev = float(forex_proxies.loc["GC=F"]['adjclose'].iloc[-2])
-            gold_change = ((gold_last - gold_prev) / gold_prev) * 100
-            vix_last = float(forex_proxies.loc["^VIX"]['adjclose'].iloc[-1])
-        except Exception:
-            oil_last, oil_change, gold_last, gold_change, vix_last = 75.0, 0.0, 2300.0, 0.0, 14.5
-
-        mc1, mc2, mc3 = st.columns(3)
-        mc1.metric("Crude Oil (CAD Link)", f"${oil_last:.2f} bbl", f"{oil_change:+.2f}%")
-        mc2.metric("Gold Futures (Safe Haven)", f"${gold_last:.2f} oz", f"{gold_change:+.2f}%")
-        risk_state = "🟢 Risk-On" if vix_last < 20 else "🚨 Risk-Off"
-        mc3.metric("CBOE VIX (Global Risk)", f"{vix_last:.2f} pts", risk_state)
-
-    st.markdown("---")
-    st.subheader("🧠 Algorithmic Institutional Structural Bias Engine")
-    aud_usd_yield_diff = 4.35 - 5.25
-    aud_jpy_yield_diff = 4.35 - 0.25
-
-    col_b1, col_b2 = st.columns(2)
-    with col_b1:
-        st.markdown("### 🇦🇺 AUD/USD Structural Outlook")
-        st.write(f"**Yield Differential:** `{aud_usd_yield_diff:.2f}%`")
-        if vix_last > 20: st.error("🚨 **BIAS: SAFE HAVEN DEFENSIVE FLIGHT**")
-        else: st.success("⚡ **BIAS: SPECULATIVE REGIME ACTIVE**")
-
-    with col_b2:
-        st.markdown("### 💴 AUD/JPY Institutional Carry Tracker")
-        st.write(f"**Yield Differential:** `{aud_jpy_yield_diff:+.2f}%`")
-        if vix_last < 18: st.success("💰 **BIAS: ACTIVE CARRY DEPLOYMENT**")
-        else: st.error("💥 **BIAS: CARRY UNWINDING DANGER**")
+    st.dataframe(pd.DataFrame(rates_data), hide_index=True, use_container_width=True)
 
 elif app_mode == "Trend Momentum Screener":
-    st.header("🟢 Original Elite Momentum Screener (ASX 50)")
+    st.header(f"🟢 Original Elite Momentum Screener ({market_tier})")
     with st.spinner("Processing trend filters..."):
-        data_pool = fetch_master_dataset_pool(ASX_50)
+        data_pool = fetch_master_dataset_pool(active_universe)
     if data_pool:
         res_df = pd.DataFrame(data_pool)
         filtered = res_df[(res_df["is_bullish"] == True) & (res_df["Dist 52W High %"] <= 15.0)].copy()
@@ -254,47 +269,37 @@ elif app_mode == "Trend Momentum Screener":
             column_config={
                 "Chart Link": st.column_config.LinkColumn("Open Workspace", display_text="📈 Launch TV Chart"),
                 "Price": st.column_config.NumberColumn(format="$%.2f"),
-                "Dist 52W High %": st.column_config.NumberColumn(format="%.2f%%"),
-                "Distance to Peak ($)": st.column_config.NumberColumn(format="$%.2f")
+                "Dist 52W High %": st.column_config.NumberColumn(format="%.2f%%")
             }, disabled=True, hide_index=True, use_container_width=True
         )
-    else: st.error("⚠️ Pipeline failure.")
 
 elif app_mode == "Fundamental Value Searcher":
     st.header("💎 Fundamental Balance Sheet Matrix")
     with st.spinner("Extracting reports..."):
-        data_pool = fetch_master_dataset_pool(ASX_50)
+        data_pool = fetch_master_dataset_pool(active_universe)
     if data_pool:
         res_df = pd.DataFrame(data_pool).copy()
         st.data_editor(
             res_df[['Name', 'Chart Link', 'Price', 'Trailing P/E', 'Profit Margin %', 'Div Yield %']],
             column_config={
                 "Chart Link": st.column_config.LinkColumn("Open Workspace", display_text="📈 Launch TV Chart"),
-                "Price": st.column_config.NumberColumn(format="$%.2f"),
-                "Profit Margin %": st.column_config.NumberColumn(format="%.2f%%"),
-                "Div Yield %": st.column_config.NumberColumn(format="%.2f%%")
+                "Price": st.column_config.NumberColumn(format="$%.2f")
             }, disabled=True, hide_index=True, use_container_width=True
         )
-    else: st.error("⚠️ Connection error.")
 
 elif app_mode == "WD Gann Mechanical Screener":
     st.header("🦅 Advanced WD Gann Structural Matrix")
-    gann_filter = st.radio("Isolate Swing Layers", ["All Matrix Assets", "Up-Swings Only", "Volatility Breaks"], horizontal=True)
     with st.spinner("Calculating geometric pivots..."):
-        data_pool = fetch_master_dataset_pool(ASX_50)
+        data_pool = fetch_master_dataset_pool(active_universe)
     if data_pool:
         res_df = pd.DataFrame(data_pool)
-        if gann_filter == "Up-Swings Only": res_df = res_df[res_df["Gann Signal"].str.contains("UP-SWING")]
-        elif gann_filter == "Volatility Breaks": res_df = res_df[res_df["Current Candle Type"].str.contains("Outside")]
         st.data_editor(
             res_df[['Name', 'Chart Link', 'Gann Signal', 'Current Candle Type', 'Price', 'Dist 52W High %']],
             column_config={
                 "Chart Link": st.column_config.LinkColumn("Open Workspace", display_text="📈 Launch TV Chart"),
-                "Price": st.column_config.NumberColumn(format="$%.2f"),
-                "Dist 52W High %": st.column_config.NumberColumn(format="%.2f%%")
+                "Price": st.column_config.NumberColumn(format="$%.2f")
             }, disabled=True, hide_index=True, use_container_width=True
         )
-    else: st.error("⚠️ Data error.")
 
 elif app_mode == "Interactive Charting Workspace" or app_mode == "Target Stock Deep Research":
     st.header(f"📈 Deep Research & Charting Terminal: ASX:{clean_symbol}")
@@ -307,10 +312,9 @@ elif app_mode == "Interactive Charting Workspace" or app_mode == "Target Stock D
         c2.metric("Gann Swing Direction", sd['Gann Signal'])
         c3.metric("Candle Structure", sd['Current Candle Type'])
         c4.metric("Trend State (50/200MA)", "🚀 BULLISH" if sd['is_bullish'] else "⚠️ BEARISH")
-    else: st.warning("Could not pull real-time API metrics, loading live chart view...")
 
     tradingview_html = f"""
-    <div class="tradingview-widget-container" style="height:550px; width:100%;"><div id="tradingview_chart" style="height:100%; width:100%;"></div>
+    <div style="height:550px; width:100%;"><div id="tradingview_chart" style="height:100%; width:100%;"></div>
       <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
       <script type="text/javascript">
       new TradingView.widget({{"autosize": true, "symbol": "ASX:{clean_symbol}", "interval": "D", "timezone": "Australia/Sydney", "theme": "light", "style": "1", "locale": "en", "container_id": "tradingview_chart"}});
