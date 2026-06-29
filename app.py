@@ -26,6 +26,7 @@ st.sidebar.markdown("---")
 st.sidebar.header("🎯 Navigation Matrix")
 app_mode = st.sidebar.selectbox("Choose App Workspace", [
     "Automated Quant Fund Simulator",  
+    "Global Macro Forex Router",       # <-- Restored selection path
     "Trend Momentum Screener",
     "Fundamental Value Searcher",
     "WD Gann Mechanical Screener",
@@ -36,7 +37,7 @@ app_mode = st.sidebar.selectbox("Choose App Workspace", [
 if raw_search:
     target_ticker = raw_search if raw_search.endswith(".AX") else f"{raw_search}.AX"
     clean_symbol = raw_search.split('.')[0]
-    if app_mode not in ["Trend Momentum Screener", "Fundamental Value Searcher", "WD Gann Mechanical Screener", "Automated Quant Fund Simulator"]:
+    if app_mode not in ["Global Macro Forex Router", "Trend Momentum Screener", "Fundamental Value Searcher", "WD Gann Mechanical Screener", "Automated Quant Fund Simulator"]:
         app_mode = "Target Stock Deep Research"
 else:
     if app_mode == "Interactive Charting Workspace":
@@ -187,6 +188,59 @@ if app_mode == "Automated Quant Fund Simulator":
             )
         else: st.warning("No stocks currently match execution filter profiles.")
     else: st.error("⚠️ Data pipeline offline.")
+
+elif app_mode == "Global Macro Forex Router":
+    st.header("🏦 Institutional Global Macro Currency Router")
+    st.markdown("Macro tracking architecture for evaluating key interest yield parameters.")
+    rates_data = {
+        "Country": ["United States (USD)", "Australia (AUD)", "Eurozone (EUR)", "United Kingdom (GBP)", "Canada (CAD)", "Japan (JPY)"],
+        "Central Bank Rate": [5.25, 4.35, 4.00, 5.00, 4.50, 0.25],
+        "Inflation Rate %": [2.6, 3.4, 2.2, 2.0, 2.5, 2.1]
+    }
+    rates_df = pd.DataFrame(rates_data)
+
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        st.subheader("📌 Global Benchmark Yield Matrix")
+        st.dataframe(rates_df, hide_index=True, use_container_width=True)
+    
+    with c2:
+        st.subheader("📈 Intermarket Sentiment Data Engines")
+        try:
+            forex_proxies = Ticker(["CL=F", "GC=F", "^VIX"]).history(period="5d")
+            oil_last = float(forex_proxies.loc["CL=F"]['adjclose'].iloc[-1])
+            oil_prev = float(forex_proxies.loc["CL=F"]['adjclose'].iloc[-2])
+            oil_change = ((oil_last - oil_prev) / oil_prev) * 100
+            gold_last = float(forex_proxies.loc["GC=F"]['adjclose'].iloc[-1])
+            gold_prev = float(forex_proxies.loc["GC=F"]['adjclose'].iloc[-2])
+            gold_change = ((gold_last - gold_prev) / gold_prev) * 100
+            vix_last = float(forex_proxies.loc["^VIX"]['adjclose'].iloc[-1])
+        except Exception:
+            oil_last, oil_change, gold_last, gold_change, vix_last = 75.0, 0.0, 2300.0, 0.0, 14.5
+
+        mc1, mc2, mc3 = st.columns(3)
+        mc1.metric("Crude Oil (CAD Link)", f"${oil_last:.2f} bbl", f"{oil_change:+.2f}%")
+        mc2.metric("Gold Futures (Safe Haven)", f"${gold_last:.2f} oz", f"{gold_change:+.2f}%")
+        risk_state = "🟢 Risk-On" if vix_last < 20 else "🚨 Risk-Off"
+        mc3.metric("CBOE VIX (Global Risk)", f"{vix_last:.2f} pts", risk_state)
+
+    st.markdown("---")
+    st.subheader("🧠 Algorithmic Institutional Structural Bias Engine")
+    aud_usd_yield_diff = 4.35 - 5.25
+    aud_jpy_yield_diff = 4.35 - 0.25
+
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        st.markdown("### 🇦🇺 AUD/USD Structural Outlook")
+        st.write(f"**Yield Differential:** `{aud_usd_yield_diff:.2f}%`")
+        if vix_last > 20: st.error("🚨 **BIAS: SAFE HAVEN DEFENSIVE FLIGHT**")
+        else: st.success("⚡ **BIAS: SPECULATIVE REGIME ACTIVE**")
+
+    with col_b2:
+        st.markdown("### 💴 AUD/JPY Institutional Carry Tracker")
+        st.write(f"**Yield Differential:** `{aud_jpy_yield_diff:+.2f}%`")
+        if vix_last < 18: st.success("💰 **BIAS: ACTIVE CARRY DEPLOYMENT**")
+        else: st.error("💥 **BIAS: CARRY UNWINDING DANGER**")
 
 elif app_mode == "Trend Momentum Screener":
     st.header("🟢 Original Elite Momentum Screener (ASX 50)")
