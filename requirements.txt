@@ -1,4 +1,4 @@
 streamlit
 pandas
 numpy
-yahooquery
+alpha_vantage
