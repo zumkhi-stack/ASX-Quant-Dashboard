@@ -73,7 +73,7 @@ app_mode = st.sidebar.selectbox("Choose App Workspace", [
     "Automated Quant Fund Simulator",  
     "Global Macro Forex Router",       
     "Trend Momentum Screener",
-    "Fundamental Value Searcher",      # <-- Restored fundamental workspace
+    "Fundamental Value Searcher",      
     "WD Gann Mechanical Screener",
     "Interactive Charting Workspace",
     "Target Stock Deep Research"
@@ -125,7 +125,7 @@ def fetch_master_dataset_pool(ticker_list):
     for m, d in cardinal_nodes:
         if cm == m and abs(cd - d) <= 2: is_cycle_node, node_type = True, " [CARDINAL]"
     for m, d in fixed_nodes:
-        if cm == m navigate and abs(cd - d) <= 2: is_cycle_node, node_type = True, " [FIXED]"
+        if cm == m and abs(cd - d) <= 2: is_cycle_node, node_type = True, " [FIXED]"
     for m, d in inter_nodes:
         if cm == m and abs(cd - d) <= 2: is_cycle_node, node_type = True, " [INTERMEDIATE]"
 
