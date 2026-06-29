@@ -10,7 +10,7 @@ st.set_page_config(page_title="ASX Master Quant Command Center", layout="wide")
 st.title("📊 ASX Master Quantitative & Geometric Command Center")
 
 # --- GLOBAL MARKET TICKER TAPE (Australia, USA, India) ---
-# This injects a lightweight TradingView streaming widget at the top of the app
+# This injects a fully qualified TradingView streaming widget at the top of the app
 ticker_tape_html = """
 <div class="tradingview-widget-container">
   <div class="tradingview-widget-container__widget"></div>
@@ -18,12 +18,12 @@ ticker_tape_html = """
   {
   "symbols": [
     {"proName": "INDEX:XJO", "title": "Australia (ASX 200)"},
-    {"proName": "FOREX:AUDUSD", "title": "AUD / USD"},
-    {"proName": "INDEX:SPX", "title": "USA (S&P 500)"},
-    {"proName": "INDEX:IXIC", "title": "USA (Nasdaq)"},
-    {"proName": "INDEX:DJI", "title": "USA (Dow 30)"},
-    {"proName": "INDEX:NIFTY", "title": "India (Nifty 50)"},
-    {"proName": "INDEX:SENSEX", "title": "India (Sensex)"}
+    {"proName": "FX_IDC:AUDUSD", "title": "AUD / USD"},
+    {"proName": "SP:SPX", "title": "USA (S&P 500)"},
+    {"proName": "NASDAQ:IXIC", "title": "USA (Nasdaq)"},
+    {"proName": "BATS:SPY", "title": "USA S&P ETF"},
+    {"proName": "NSE:NIFTY", "title": "India (Nifty 50)"},
+    {"proName": "BSE:SENSEX", "title": "India (Sensex)"}
   ],
   "showSymbolLogo": true,
   "colorTheme": "light",
