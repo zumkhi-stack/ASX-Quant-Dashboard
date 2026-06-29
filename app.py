@@ -151,8 +151,12 @@ def fetch_master_dataset_pool(ticker_list):
 
             if df.empty or len(df) < 10: continue
 
-            close_col = 'adjclose' if 'adjclose' in df.columns else 'close'
+            c_col = 'adjclose' if 'adjclose' in df.columns else 'close'
+            df['50_MA'] = df[c_col].rolling(window=min(50, len(df))).mean()
+            df['200_MA'] = df[c_col].rolling(window=min(200, len(df))).mean()
             
-            df['50_MA'] = df[close_col].rolling(window=min(50, len(df))).mean()
-            df['200_MA'] = df[close_col].rolling(window=min(200, len(df))).mean()
-            latest
+            latest_close = float(df[c_col].iloc[-1])
+            prev_close = float(df[c_col].iloc[-2]) if len(df) > 1 else latest_close
+            high_52w = float(df['high'].max())
+            dist_to_high = ((high_52w - latest_close) / high_52w) * 100 if high_52w > 0 else 0
+            is_bullish_trend = float(df
