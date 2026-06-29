@@ -58,13 +58,10 @@ market_tier = st.sidebar.selectbox("Choose Core Market Target", [
 # Route data stream allocations dynamically
 if market_tier == "ASX 50 Blue Chips":
     active_universe = ASX_50
-    asset_type_label = "Stock"
 elif market_tier == "Global Macro Forex Pairs":
     active_universe = FOREX_MAJORS
-    asset_type_label = "Currency Pair"
 else:
     active_universe = ASX_50 + FOREX_MAJORS
-    asset_type_label = "Asset"
 
 st.sidebar.markdown("---")
 st.sidebar.header("🔍 Global Market Router")
@@ -76,8 +73,10 @@ app_mode = st.sidebar.selectbox("Choose App Workspace", [
     "Automated Quant Fund Simulator",  
     "Global Macro Forex Router",       
     "Trend Momentum Screener",
+    "Fundamental Value Searcher",      # <-- Restored fundamental workspace
     "WD Gann Mechanical Screener",
-    "Interactive Charting Workspace"
+    "Interactive Charting Workspace",
+    "Target Stock Deep Research"
 ])
 
 # Search normalization filter logic
@@ -89,8 +88,8 @@ if raw_search:
         target_ticker = raw_search if raw_search.endswith(".AX") else f"{raw_search}.AX"
         clean_symbol = raw_search.split('.')[0]
     
-    if app_mode not in ["Global Macro Forex Router", "Trend Momentum Screener", "WD Gann Mechanical Screener", "Automated Quant Fund Simulator"]:
-        app_mode = "Interactive Charting Workspace"
+    if app_mode not in ["Global Macro Forex Router", "Trend Momentum Screener", "Fundamental Value Searcher", "WD Gann Mechanical Screener", "Automated Quant Fund Simulator"]:
+        app_mode = "Target Stock Deep Research"
 else:
     if app_mode == "Interactive Charting Workspace":
         ticker_choice = st.sidebar.selectbox("Select Active Ticker Pool Asset", active_universe)
@@ -107,9 +106,28 @@ def fetch_master_dataset_pool(ticker_list):
     try:
         t = Ticker(ticker_list)
         history = t.history(period="1y")
+        summary = t.summary_detail
+        financials = t.financial_data
         if history is None or (isinstance(history, dict) and not history): return []
     except Exception:
         return []
+
+    today = datetime.now()
+    cm, cd = today.month, today.day
+    is_cycle_node = False
+    node_type = ""
+
+    cardinal_nodes = [(3,21), (6,22), (9,23), (12,22)]
+    fixed_nodes    = [(2,4), (5,6), (8,9), (11,7)]
+    inter_nodes    = [(1,5), (1,20), (2,19), (3,6), (4,5), (4,20), (5,21), (6,6),
+                      (7,7), (7,23), (8,23), (9,7), (10,8), (10,23), (11,22), (12,7)]
+
+    for m, d in cardinal_nodes:
+        if cm == m and abs(cd - d) <= 2: is_cycle_node, node_type = True, " [CARDINAL]"
+    for m, d in fixed_nodes:
+        if cm == m navigate and abs(cd - d) <= 2: is_cycle_node, node_type = True, " [FIXED]"
+    for m, d in inter_nodes:
+        if cm == m and abs(cd - d) <= 2: is_cycle_node, node_type = True, " [INTERMEDIATE]"
 
     for ticker in ticker_list:
         try:
@@ -121,16 +139,17 @@ def fetch_master_dataset_pool(ticker_list):
 
             if df.empty or len(df) < 50: continue
 
-            # Apply standard algorithmic overlays across all assets
+            # Technical overlays
             df['50_MA'] = df['adjclose'].rolling(window=50).mean()
             df['200_MA'] = df['adjclose'].rolling(window=200).mean()
             latest_close = float(df['adjclose'].iloc[-1])
             prev_close = float(df['adjclose'].iloc[-2]) if len(df) > 1 else latest_close
             high_52w = float(df['high'].max())
             dist_to_high = ((high_52w - latest_close) / high_52w) * 100
+            distance_usd = high_52w - latest_close
             is_bullish_trend = float(df['50_MA'].iloc[-1]) > float(df['200_MA'].iloc[-1])
 
-            # Candle pattern evaluation
+            # Candle structures
             df['prev_high'] = df['high'].shift(1)
             df['prev_low'] = df['low'].shift(1)
             last_row = df.iloc[-1]
@@ -141,43 +160,47 @@ def fetch_master_dataset_pool(ticker_list):
             elif h > ph and l >= pl: bar_type = "🟢 Up Bar"
             else: bar_type = "🔴 Down Bar"
 
-            # WD Gann Mechanical Swing Framework
+            # Gann System Mechanics
             swing_dir = 1
             for i in range(2, len(df)):
                 if df['high'].iloc[i] > df['high'].iloc[i-2] and swing_dir == -1: swing_dir = 1
                 elif df['low'].iloc[i] < df['low'].iloc[i-2] and swing_dir == 1: swing_dir = -1
 
             gann_signal = "🟢 GANN UP-SWING" if swing_dir == 1 else "🚨 GANN DOWN-SWING"
-            
+            if is_cycle_node: gann_signal += f" ⚡{node_type}"
+
+            # Safely capture fundamentals for stocks, fallback with NaN for Forex
+            tick_summary = summary.get(ticker, {}) if summary else {}
+            tick_fin = financials.get(ticker, {}) if financials else {}
             raw_name = ticker.replace(".AX", "").replace("=X", "")
             tv_prefix = "" if "=X" in ticker else "ASX:"
             link_url = f"https://www.tradingview.com/chart/?symbol={tv_prefix}{raw_name}"
 
             compiled_results.append({
                 "Ticker": ticker, "Chart Link": link_url, "Name": raw_name, "Entry Price": prev_close, "Price": latest_close, 
-                "Dist 52W High %": dist_to_high, "is_bullish": is_bullish_trend, "Gann Signal": gann_signal, "Current Candle Type": bar_type
+                "Dist 52W High %": dist_to_high, "Distance to Peak ($)": distance_usd, "is_bullish": is_bullish_trend,
+                "Gann Signal": gann_signal, "Current Candle Type": bar_type, 
+                "Trailing P/E": tick_summary.get('trailingPE', np.nan),
+                "Profit Margin %": tick_fin.get('profitMargins', np.nan) * 100 if tick_fin.get('profitMargins', np.nan) else np.nan,
+                "Div Yield %": tick_summary.get('dividendYield', np.nan) * 100 if tick_summary.get('dividendYield', np.nan) else np.nan
             })
         except Exception: continue
     return compiled_results
 
-# --- EXECUTE APP WINDOW CHANNELS ---
+# --- EXECUTE WORKSPACE ROUTING ---
 
 if app_mode == "Automated Quant Fund Simulator":
     st.header(f"🤖 Multi-Asset Quant Management Simulator ({market_tier})")
-    st.markdown("Maintains a rigorous, objective allocation framework based entirely on mathematical trend and geometric models.")
-
     st.sidebar.subheader("⚙️ Quant System Tuning")
     max_risk = st.sidebar.slider("Maximum Trailing Stop-Loss %", 1.0, 15.0, 5.0, step=0.5)
     allocation_pool = st.sidebar.number_input("Total Sandbox Capital ($ AUD)", value=20000, step=1000)
 
-    with st.spinner("Analyzing cross-market technical frameworks..."):
+    with st.spinner("Analyzing assets..."):
         data_pool = fetch_master_dataset_pool(active_universe)
-
     if data_pool:
         res_df = pd.DataFrame(data_pool)
         quant_targets = res_df[(res_df["is_bullish"] == True) & (res_df["Gann Signal"].str.contains("UP-SWING"))].copy()
-        quant_targets = quant_targets.sort_values(by="Dist 52W High %", ascending=True)
-        top_5_portfolio = quant_targets.head(5).copy()
+        top_5_portfolio = quant_targets.sort_values(by="Dist 52W High %").head(5).copy()
         
         if not top_5_portfolio.empty:
             per_asset_cash = allocation_pool / len(top_5_portfolio)
@@ -186,29 +209,13 @@ if app_mode == "Automated Quant Fund Simulator":
             top_5_portfolio["Return %"] = ((top_5_portfolio["Price"] - top_5_portfolio["Entry Price"]) / top_5_portfolio["Entry Price"]) * 100
             top_5_portfolio["Current P&L ($)"] = (per_asset_cash / top_5_portfolio["Entry Price"]) * (top_5_portfolio["Price"] - top_5_portfolio["Entry Price"])
             
-            total_pnl = top_5_portfolio["Current P&L ($)"].sum()
-            total_return = (total_pnl / allocation_pool) * 100
-            
             m1, m2, m3 = st.columns(3)
-            m1.metric("Active Allocations Loaded", f"{len(top_5_portfolio)} Selected")
-            m2.metric("Sizing Symmetrical Weight", f"${per_asset_cash:,.2f} AUD")
-            if total_pnl >= 0: m3.metric("Total Strategic P&L", f"+${total_pnl:,.2f} AUD", f"🟢 +{total_return:.2f}%")
-            else: m3.metric("Total Strategic P&L", f"-${abs(total_pnl):,.2f} AUD", f"🔴 {total_return:.2f}%")
+            m1.metric("Active Assets", f"{len(top_5_portfolio)} Loaded")
+            m2.metric("Sizing Weight", f"${per_asset_cash:,.2f} AUD")
+            m3.metric("Total P&L", f"${top_5_portfolio['Current P&L ($)'].sum():,.2f} AUD")
 
-            st.subheader("💼 Active Strategy Tracking Model")
-            st.data_editor(
-                top_5_portfolio[['Name', 'Entry Price', 'Price', 'Allocated Capital', 'Current P&L ($)', 'Return %', 'Hard Stop-Loss Level']],
-                column_config={
-                    "Entry Price": st.column_config.NumberColumn("Baseline Level", format="%.4f"),
-                    "Price": st.column_config.NumberColumn("Current Close", format="%.4f"),
-                    "Allocated Capital": st.column_config.NumberColumn("Risk Sizing Value", format="$%.2f"),
-                    "Current P&L ($)": st.column_config.NumberColumn("P&L ($)", format="$%.2f"),
-                    "Return %": st.column_config.NumberColumn("Return", format="%.2f%%"),
-                    "Hard Stop-Loss Level": st.column_config.NumberColumn("Stop Loss Pivot", format="%.4f")
-                }, disabled=True, hide_index=True, use_container_width=True
-            )
-        else: st.warning("No assets across the active profile currently meet criteria.")
-    else: st.error("⚠️ Data connection offline.")
+            st.data_editor(top_5_portfolio[['Name', 'Entry Price', 'Price', 'Allocated Capital', 'Current P&L ($)', 'Return %', 'Hard Stop-Loss Level']], disabled=True, hide_index=True, use_container_width=True)
+        else: st.warning("No matches found.")
 
 elif app_mode == "Global Macro Forex Router":
     st.header("🏦 Institutional Global Macro Currency Router")
@@ -226,34 +233,45 @@ elif app_mode == "Trend Momentum Screener":
     if data_pool:
         res_df = pd.DataFrame(data_pool)
         filtered = res_df[(res_df["is_bullish"] == True)].copy().sort_values(by="Dist 52W High %")
+        st.data_editor(filtered[['Name', 'Chart Link', 'Price', 'Dist 52W High %']], column_config={"Price": st.column_config.NumberColumn(format="%.4f")}, disabled=True, hide_index=True, use_container_width=True)
+
+elif app_mode == "Fundamental Value Searcher":
+    st.header("💎 Fundamental Balance Sheet Matrix")
+    with st.spinner("Extracting parameters..."):
+        data_pool = fetch_master_dataset_pool(active_universe)
+    if data_pool:
+        res_df = pd.DataFrame(data_pool).copy()
         st.data_editor(
-            filtered[['Name', 'Chart Link', 'Price', 'Dist 52W High %']],
+            res_df[['Name', 'Chart Link', 'Price', 'Trailing P/E', 'Profit Margin %', 'Div Yield %']],
             column_config={
-                "Chart Link": st.column_config.LinkColumn("Open Workspace", display_text="📈 Open Widget Chart"),
+                "Chart Link": st.column_config.LinkColumn("Open Workspace", display_text="📈 Chart"),
                 "Price": st.column_config.NumberColumn(format="%.4f"),
-                "Dist 52W High %": st.column_config.NumberColumn(format="%.2f%%")
+                "Profit Margin %": st.column_config.NumberColumn(format="%.2f%%"),
+                "Div Yield %": st.column_config.NumberColumn(format="%.2f%%")
             }, disabled=True, hide_index=True, use_container_width=True
         )
 
 elif app_mode == "WD Gann Mechanical Screener":
     st.header("🦅 Advanced WD Gann Structural Matrix")
-    with st.spinner("Mapping geometric channels..."):
+    with st.spinner("Calculating pivots..."):
         data_pool = fetch_master_dataset_pool(active_universe)
     if data_pool:
         res_df = pd.DataFrame(data_pool)
-        st.data_editor(
-            res_df[['Name', 'Chart Link', 'Gann Signal', 'Current Candle Type', 'Price']],
-            column_config={
-                "Chart Link": st.column_config.LinkColumn("Open Workspace", display_text="📈 Open Widget Chart"),
-                "Price": st.column_config.NumberColumn(format="%.4f")
-            }, disabled=True, hide_index=True, use_container_width=True
-        )
+        st.data_editor(res_df[['Name', 'Chart Link', 'Gann Signal', 'Current Candle Type', 'Price']], column_config={"Price": st.column_config.NumberColumn(format="%.4f")}, disabled=True, hide_index=True, use_container_width=True)
 
-elif app_mode == "Interactive Charting Workspace":
+elif app_mode == "Interactive Charting Workspace" or app_mode == "Target Stock Deep Research":
     st.header(f"📈 Deep Research Terminal: {clean_symbol}")
-    
+    with st.spinner("Pulling real-time parameters..."):
+        single_pool = fetch_master_dataset_pool([target_ticker])
+    if single_pool:
+        sd = single_pool[0]
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Latest Close", f"{sd['Price']:.4f}")
+        c2.metric("Gann Swing Direction", sd['Gann Signal'])
+        c3.metric("Candle Structure", sd['Current Candle Type'])
+        c4.metric("Trend State (50/200MA)", "🚀 BULLISH" if sd['is_bullish'] else "⚠️ BEARISH")
+
     tv_symbol = f"FX:{clean_symbol}" if any(fx in clean_symbol for fx in ["USD", "JPY", "EUR", "GBP", "AUD", "NZD"]) else f"ASX:{clean_symbol}"
-    
     tradingview_html = f"""
     <div style="height:550px; width:100%;"><div id="tradingview_chart" style="height:100%; width:100%;"></div>
       <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
