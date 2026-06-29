@@ -94,7 +94,7 @@ def fetch_master_dataset_pool(ticker_list):
 
             compiled_results.append({
                 "Ticker": tk, "Chart Link": l_url, "Name": r_name, "Entry Price": p_prev, "Price": p_curr, 
-                "Dist 52W High %": d_high, "is_bullish": is_bull = True, "Gann Signal": g_sig, "Current Candle Type": b_type, 
+                "Dist 52W High %": d_high, "is_bullish": is_bull, "Gann Signal": g_sig, "Current Candle Type": b_type, 
                 "Trailing P/E": t_sum.get('trailingPE', np.nan),
                 "Profit Margin %": t_fin.get('profitMargins', np.nan) * 100 if t_fin.get('profitMargins') else np.nan,
                 "Div Yield %": t_sum.get('dividendYield', np.nan) * 100 if t_sum.get('dividendYield') else np.nan
@@ -117,4 +117,52 @@ if app_mode == "Automated Quant Fund Simulator":
             top_5["Allocated Capital"] = cash
             top_5["Stop Level"] = top_5["Entry Price"] * (1 - (max_risk / 100))
             top_5["Return %"] = ((top_5["Price"] - top_5["Entry Price"]) / top_5["Entry Price"]) * 100
-            top_5["P&L ($)"] = (cash / top_5["Entry Price"]) * (
+            top_5["P&L ($)"] = (cash / top_5["Entry Price"]) * (top_5["Price"] - top_5["Entry Price"])
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Assets", len(top_5))
+            c2.metric("Size Weight", f"${cash:,.2f}")
+            c3.metric("Total P&L", f"${top_5['P&L ($)'].sum():,.2f}")
+            st.dataframe(top_5[['Name', 'Entry Price', 'Price', 'Allocated Capital', 'P&L ($)', 'Return %', 'Stop Level']], hide_index=True, use_container_width=True)
+        else: st.warning("No strategy matches.")
+
+elif app_mode == "Global Macro Forex Router":
+    st.header("🏦 Global Macro Currency Router")
+    st.dataframe(pd.DataFrame({"Country": ["USA (USD)", "Australia (AUD)", "Eurozone (EUR)", "UK (GBP)", "Japan (JPY)"], "Rate": [5.25, 4.35, 4.00, 5.00, 0.25], "Inflation": [2.6, 3.4, 2.2, 2.0, 2.1]}), hide_index=True, use_container_width=True)
+
+elif app_mode == "Trend Momentum Screener":
+    st.header(f"🟢 Elite Momentum Screener ({market_tier})")
+    with st.spinner("Processing..."): data_pool = fetch_master_dataset_pool(active_universe)
+    if data_pool:
+        df_m = pd.DataFrame(data_pool)
+        filtered = df_m if is_forex_only else df_m[df_m["is_bullish"]==True].sort_values(by="Dist 52W High %")
+        st.data_editor(filtered[['Name', 'Chart Link', 'Price', 'Gann Signal', 'Current Candle Type']], column_config={"Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), "Price": st.column_config.NumberColumn(format="%.4f")}, disabled=True, hide_index=True, use_container_width=True)
+
+elif app_mode == "Fundamental Value Searcher":
+    st.header("💎 Fundamental Balance Sheet Matrix")
+    with st.spinner("Extracting parameters..."): data_pool = fetch_master_dataset_pool(active_universe)
+    if data_pool:
+        st.data_editor(pd.DataFrame(data_pool)[['Name', 'Chart Link', 'Price', 'Trailing P/E', 'Profit Margin %', 'Div Yield %']], column_config={"Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), "Price": st.column_config.NumberColumn(format="%.4f"), "Profit Margin %": st.column_config.NumberColumn(format="%.2f%%"), "Div Yield %": st.column_config.NumberColumn(format="%.2f%%")}, disabled=True, hide_index=True, use_container_width=True)
+
+elif app_mode == "WD Gann Mechanical Screener":
+    st.header("🦅 Advanced WD Gann Structural Matrix")
+    with st.spinner("Calculating pivots..."): data_pool = fetch_master_dataset_pool(active_universe)
+    if data_pool:
+        st.data_editor(pd.DataFrame(data_pool)[['Name', 'Chart Link', 'Gann Signal', 'Current Candle Type', 'Price']], column_config={"Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), "Price": st.column_config.NumberColumn(format="%.4f")}, disabled=True, hide_index=True, use_container_width=True)
+
+elif app_mode in ["Interactive Charting Workspace", "Target Stock Deep Research"]:
+    st.header(f"📈 Deep Research Terminal: {clean_symbol}")
+    with st.spinner("Pulling real-time parameters..."): single_p = fetch_master_dataset_pool([target_ticker])
+    if single_p:
+        sd = single_p[0]
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Latest Close", f"{sd['Price']:.4f}")
+        c2.metric("Gann Swing", sd['Gann Signal'])
+        c3.metric("Candle Structure", sd['Current Candle Type'])
+        c4.metric("Trend (50/200MA)", "🚀 BULL" if sd['is_bullish'] else "⚠️ BEAR")
+
+    sym = f"FX:{clean_symbol}" if any(fx in clean_symbol for fx in ["USD", "JPY", "EUR", "GBP", "AUD", "NZD"]) else f"ASX:{clean_symbol}"
+    components.html(f"""<div style="height:550px; width:100%;"><div id="tv_chart" style="height:100%; width:100%;"></div>
+      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+      <script type="text/javascript">new TradingView.widget({{"autosize": true, "symbol": "{sym}", "interval": "D", "timezone": "Australia/Sydney", "theme": "light", "style": "1", "locale": "en", "container_id": "tv_chart"}});</script>
+    </div>""", height=570)
