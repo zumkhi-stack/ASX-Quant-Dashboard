@@ -107,7 +107,8 @@ def fetch_forex_dataset_pool(ticker_list):
     return compiled_results
 
 # --- FX WORKSPACES INTERFACE ROUTING ---
-elif app_mode == "Automated FX Fund Simulator":
+# --- FX WORKSPACES INTERFACE ROUTING ---
+if app_mode == "Automated FX Fund Simulator":
     st.header("🤖 Emotionless Paper-Trading Simulator Engine")
     st.caption("Tracks simulated virtual positions in real-time based strictly on mechanical system signals.")
 
@@ -115,7 +116,7 @@ elif app_mode == "Automated FX Fund Simulator":
     if "fx_account" not in st.session_state:
         st.session_state.fx_account = {
             "cash": 50000.00,        # Initial Sandbox Balance ($ AUD)
-            "positions": {}          # Stores open pairs: {"AUDUSD": {"entry": 0.6620, "size": 10000, "stop": 0.6520}}
+            "positions": {}          # Stores open pairs
         }
 
     # 2. Strategy Tuning Controls
@@ -144,12 +145,9 @@ elif app_mode == "Automated FX Fund Simulator":
             price = asset["Price"]
 
             # --- AUTOMATED ENTRY LOGIC ---
-            # Condition: Trend is bullish, Gann confirms Up-Swing, and we don't already own it
             if is_bullish and gann_up and (name not in st.session_state.fx_account["positions"]):
                 if st.session_state.fx_account["cash"] >= trade_size:
-                    # Deduct virtual capital allocation
                     st.session_state.fx_account["cash"] -= trade_size
-                    # Log position details
                     st.session_state.fx_account["positions"][name] = {
                         "entry": price,
                         "size": trade_size,
@@ -158,30 +156,22 @@ elif app_mode == "Automated FX Fund Simulator":
                     }
                     st.toast(f"🎯 AUTOMATED BUY ORDER EXECUTED: {name} at {price}")
 
-            # --- AUTOMATED EXIT LOGIC (Stop Loss or Structural Breakdown) ---
+            # --- AUTOMATED EXIT LOGIC ---
             if name in st.session_state.fx_account["positions"]:
                 pos = st.session_state.fx_account["positions"][name]
-                
-                # Check if price hit our mechanical stop loss or trend structure broken down
                 hit_stop = price <= pos["stop_loss"]
                 structural_exit = gann_down
 
                 if hit_stop or structural_exit:
-                    # Calculate final payout valuation
                     return_multiplier = price / pos["entry"]
                     liquidated_cash = pos["size"] * return_multiplier
-                    
-                    # Return funds back to virtual vault account balance
                     st.session_state.fx_account["cash"] += liquidated_cash
                     del st.session_state.fx_account["positions"][name]
-                    
                     reason = "🛑 STOP LOSS" if hit_stop else "🚨 STRUCTURAL BREAKDOWN"
                     st.toast(f"SYSTEM EXECUTION: Closed {name} due to {reason}")
 
         # 5. LIVE ACCOUNT DASHBOARD METRICS DISPLAY
         open_positions = st.session_state.fx_account["positions"]
-        
-        # Calculate overall floating equity metric valuation
         current_floating_value = 0.0
         active_rows = []
         
@@ -204,7 +194,6 @@ elif app_mode == "Automated FX Fund Simulator":
         total_equity = st.session_state.fx_account["cash"] + current_floating_value
         total_pnl = total_equity - 50000.00
 
-        # Draw metrics banner
         m1, m2, m3 = st.columns(3)
         m1.metric("Available Virtual Cash", f"${st.session_state.fx_account['cash']:,.2f} AUD")
         m2.metric("Total Account Equity (Net)", f"${total_equity:,.2f} AUD")
