@@ -108,15 +108,15 @@ def fetch_forex_dataset_pool(ticker_list):
 
 # --- FX WORKSPACES INTERFACE ROUTING ---
 if app_mode == "Automated FX Fund Simulator":
-    st.header("🤖 Emotionless Paper-Trading Simulator Engine")
-    st.caption("Tracks simulated virtual positions in real-time based strictly on mechanical system signals.")
+    st.header("⚙️ Institutional Manual Execution Terminal")
+    st.caption("Review algorithmic entry/exit signals below and lock positions into your portfolio manually to track them accurately.")
 
     # 1. Initialize Virtual Core Account Balance & Ledger History in Memory
     if "fx_account" not in st.session_state:
         st.session_state.fx_account = {
             "cash": 50000.00,        # Initial Sandbox Balance ($ AUD)
-            "positions": {},         # Stores open pairs
-            "ledger": []             # NEW: Stores closed trades history list
+            "positions": {},         # Stores permanently locked open pairs
+            "ledger": []             # Stores closed trades history list
         }
 
     # 2. Strategy Tuning Controls
@@ -130,65 +130,113 @@ if app_mode == "Automated FX Fund Simulator":
         st.rerun()
 
     # 3. Pull Current Live Engine Signal Structures
-    with st.spinner("Processing automated execution feed..."): 
+    with st.spinner("Processing live signals..."): 
         data_pool = fetch_forex_dataset_pool(FOREX_MAJORS)
 
     if data_pool:
-        # Convert engine pool output to a structured dictionary for easy indexing
         current_market = {item["Name"]: item for item in data_pool}
         
-        # 4. BACKGROUND AUTOMATION LOOP (No Emotion Execution Engine)
+        # --- NEW VISUAL SIGNAL MATRIX ---
+        st.subheader("📡 Live Strategy Signal Feed")
+        signal_rows = []
         for name, asset in current_market.items():
             gann_up = "GANN UP" in asset["Gann Signal"]
-            gann_down = "GANN DOWN" in asset["Gann Signal"]
             is_bullish = asset["is_bullish"]
-            price = asset["Price"]
-
-            # --- AUTOMATED ENTRY LOGIC ---
-            if is_bullish and gann_up and (name not in st.session_state.fx_account["positions"]):
-                if st.session_state.fx_account["cash"] >= trade_size:
-                    st.session_state.fx_account["cash"] -= trade_size
-                    st.session_state.fx_account["positions"][name] = {
-                        "entry": price,
-                        "size": trade_size,
-                        "stop_loss": price * (1 - (risk_pct / 100)),
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
-                    }
-                    st.toast(f"🎯 AUTOMATED BUY ORDER EXECUTED: {name} at {price}")
-
-            # --- AUTOMATED EXIT LOGIC ---
+            
+            # Check status
             if name in st.session_state.fx_account["positions"]:
-                pos = st.session_state.fx_account["positions"][name]
-                hit_stop = price <= pos["stop_loss"]
-                structural_exit = gann_down
+                status = "💼 Already in Portfolio"
+            elif is_bullish and gann_up:
+                status = "🟢 BUY SIGNAL GENERATED"
+            else:
+                status = "⚪ Scanning / Neutral"
+                
+            signal_rows.append({
+                "Asset Pair": name,
+                "Current Rate": f"{asset['Price']:.4f}",
+                "Gann Direction": asset["Gann Signal"],
+                "Trend Structure": "🚀 BULLISH" if is_bullish else "⚠️ BEARISH",
+                "System Action Alert": status
+            })
+        st.dataframe(pd.DataFrame(signal_rows), hide_index=True, use_container_width=True)
 
-                if hit_stop or structural_exit:
-                    return_multiplier = price / pos["entry"]
+        # --- PORTFOLIO ORDER SUBMISSION INTERFACES ---
+        st.markdown("---")
+        st.subheader("🕹️ Order Execution Pad")
+        
+        # Filter down pairs that have an active buy signal and aren't owned yet
+        available_buys = [r["Asset Pair"] for r in signal_rows if "BUY SIGNAL" in r["System Action Alert"]]
+        
+        col_exec1, col_exec2 = st.columns(2)
+        
+        with col_exec1:
+            if available_buys:
+                selected_buy = st.selectbox("Select Active Signal Pair to Buy", available_buys)
+                if st.button(f"🚀 Execute Market BUY Order: {selected_buy}"):
+                    if st.session_state.fx_account["cash"] >= trade_size:
+                        price_now = current_market[selected_buy]["Price"]
+                        st.session_state.fx_account["cash"] -= trade_size
+                        # Lock it into memory permanently
+                        st.session_state.fx_account["positions"][selected_buy] = {
+                            "entry": price_now,
+                            "size": trade_size,
+                            "stop_loss": price_now * (1 - (risk_pct / 100)),
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
+                        }
+                        st.toast(f"Locked {selected_buy} into portfolio!")
+                        st.rerun()
+                    else:
+                        st.error("Insufficient Cash Pool.")
+            else:
+                st.info("No active structural buy alerts ready for deployment right now.")
+
+        with col_exec2:
+            active_owned = list(st.session_state.fx_account["positions"].keys())
+            if active_owned:
+                selected_exit = st.selectbox("Select Active Position to Liquidate", active_owned)
+                if st.button(f"🚨 Execute Market SELL Order: {selected_exit}"):
+                    pos = st.session_state.fx_account["positions"][selected_exit]
+                    price_now = current_market[selected_exit]["Price"]
+                    
+                    return_multiplier = price_now / pos["entry"]
                     liquidated_cash = pos["size"] * return_multiplier
+                    pnl_pct = ((price_now - pos["entry"]) / pos["entry"]) * 100
+                    pnl_cash = (pos["size"] / pos["entry"]) * (price_now - pos["entry"])
                     
-                    # Calculate metric data for the ledger record
-                    pnl_pct = ((price - pos["entry"]) / pos["entry"]) * 100
-                    pnl_cash = (pos["size"] / pos["entry"]) * (price - pos["entry"])
-                    reason = "🛑 STOP LOSS" if hit_stop else "🚨 GANN REVERSAL"
-                    
-                    # NEW: Append final trade data to the historical ledger BEFORE deleting
                     st.session_state.fx_account["ledger"].append({
-                        "Asset Pair": name,
-                        "Entry Time": pos["timestamp"],
-                        "Exit Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        "Entry Rate": f"{pos['entry']:.4f}",
-                        "Exit Rate": f"{price:.4f}",
-                        "Reason": reason,
-                        "Return %": f"{pnl_pct:+.2f}%",
-                        "Final P&L ($)": f"${pnl_cash:+.2f}"
+                        "Asset Pair": selected_exit, "Entry Time": pos["timestamp"], "Exit Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "Entry Rate": f"{pos['entry']:.4f}", "Exit Rate": f"{price_now:.4f}", "Reason": "🎯 MANUAL TARGET EXIT",
+                        "Return %": f"{pnl_pct:+.2f}%", "Final P&L ($)": f"${pnl_cash:+.2f}"
                     })
-                    
-                    # Update core account balance
                     st.session_state.fx_account["cash"] += liquidated_cash
-                    del st.session_state.fx_account["positions"][name]
-                    st.toast(f"SYSTEM EXECUTION: Closed {name} due to {reason}")
+                    del st.session_state.fx_account["positions"][selected_exit]
+                    st.toast(f"Successfully Sold {selected_exit}!")
+                    st.rerun()
+            else:
+                st.info("No active open trades to close manually.")
 
-        # 5. LIVE ACCOUNT DASHBOARD METRICS DISPLAY
+        # --- BACKGROUND PROTECTION AUTOMATION (Stop Loss Tracker) ---
+        for name in list(st.session_state.fx_account["positions"].keys()):
+            pos = st.session_state.fx_account["positions"][name]
+            price = current_market[name]["Price"]
+            
+            if price <= pos["stop_loss"]:
+                return_multiplier = price / pos["entry"]
+                liquidated_cash = pos["size"] * return_multiplier
+                pnl_pct = ((price - pos["entry"]) / pos["entry"]) * 100
+                pnl_cash = (pos["size"] / pos["entry"]) * (price - pos["entry"])
+                
+                st.session_state.fx_account["ledger"].append({
+                    "Asset Pair": name, "Entry Time": pos["timestamp"], "Exit Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "Entry Rate": f"{pos['entry']:.4f}", "Exit Rate": f"{price:.4f}", "Reason": "🛑 STOP LOSS TRIGGERED",
+                    "Return %": f"{pnl_pct:+.2f}%", "Final P&L ($)": f"${pnl_cash:+.2f}"
+                })
+                st.session_state.fx_account["cash"] += liquidated_cash
+                del st.session_state.fx_account["positions"][name]
+                st.toast(f"CRITICAL RISK ACTION: {name} hit hard Stop Loss limit.")
+                st.rerun()
+
+        # 4. LIVE ACCOUNT DASHBOARD METRICS DISPLAY
         open_positions = st.session_state.fx_account["positions"]
         current_floating_value = 0.0
         active_rows = []
@@ -200,31 +248,27 @@ if app_mode == "Automated FX Fund Simulator":
             current_floating_value += (pos["size"] + pnl_cash)
             
             active_rows.append({
-                "Asset Pair": name,
-                "Execution Time": pos["timestamp"],
-                "Entry Rate": f"{pos['entry']:.4f}",
-                "Current Rate": f"{curr_price:.4f}",
-                "Stop Level": f"{pos['stop_loss']:.4f}",
-                "Return %": f"{pnl_pct:+.2f}%",
-                "Floating P&L ($)": f"${pnl_cash:+.2f}"
+                "Asset Pair": name, "Execution Time": pos["timestamp"], "Entry Rate": f"{pos['entry']:.4f}",
+                "Current Rate": f"{curr_price:.4f}", "Stop Level": f"{pos['stop_loss']:.4f}",
+                "Return Status": f"{pnl_pct:+.2f}%", "Floating P&L ($)": f"${pnl_cash:+.2f}"
             })
 
         total_equity = st.session_state.fx_account["cash"] + current_floating_value
         total_pnl = total_equity - 50000.00
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Available Virtual Cash", f"${st.session_state.fx_account['cash']:,.2f} AUD")
-        m2.metric("Total Account Equity (Net)", f"${total_equity:,.2f} AUD")
-        m3.metric("Net Total Returns (All-Time)", f"${total_pnl:,.2f} AUD", delta=f"{total_pnl:+.2f}")
-
         st.markdown("---")
-        st.subheader("📋 Active Automated Open Positions")
+        st.subheader("📋 Core Live Open Portfolio Account Status")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Available Balance Cash", f"${st.session_state.fx_account['cash']:,.2f} AUD")
+        m2.metric("Total Net Portfolio Equity", f"${total_equity:,.2f} AUD")
+        m3.metric("Net Total Realized Returns", f"${total_pnl:,.2f} AUD", delta=f"{total_pnl:+.2f}")
+
         if active_rows:
             st.dataframe(pd.DataFrame(active_rows), hide_index=True, use_container_width=True)
         else:
-            st.info("System is scanning. No assets currently meet open execution criteria.")
+            st.info("Your portfolio is currently empty. Use the order pad above to execute active signals.")
 
-       # NEW: 6. CLOSED TRADES HISTORICAL LEDGER TABLE DISPLAY
+        # 5. HISTORICAL RECORDS LEDGER
         st.markdown("---")
         st.subheader("📚 Historical Closed Ledger (Real-Time Performance Track)")
         if st.session_state.fx_account["ledger"]:
