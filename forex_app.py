@@ -224,17 +224,14 @@ if app_mode == "Automated FX Fund Simulator":
         else:
             st.info("System is scanning. No assets currently meet open execution criteria.")
 
-        # NEW: 6. CLOSED TRADES HISTORICAL LEDGER TABLE DISPLAY
+       # NEW: 6. CLOSED TRADES HISTORICAL LEDGER TABLE DISPLAY
         st.markdown("---")
         st.subheader("📚 Historical Closed Ledger (Real-Time Performance Track)")
         if st.session_state.fx_account["ledger"]:
             ledger_df = pd.DataFrame(st.session_state.fx_account["ledger"])
-            # Display history table reverse chronologically (newest exits at the top)
             st.dataframe(ledger_df.iloc[::-1], hide_index=True, use_container_width=True)
         else:
-            st.info("No closed trades archived yet for this session. Trades appear here instantly when stopped out or structurally exited.")
-
-elif app_mode == "Central Bank Rate Matrix":
+            st.info("No closed trades archived yet for this session.")
 
 elif app_mode == "Central Bank Rate Matrix":
     st.header("🏦 Global Central Bank Interest Yield Engine")
