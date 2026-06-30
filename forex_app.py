@@ -107,7 +107,6 @@ def fetch_forex_dataset_pool(ticker_list):
     return compiled_results
 
 # --- FX WORKSPACES INTERFACE ROUTING ---
-# --- FX WORKSPACES INTERFACE ROUTING ---
 if app_mode == "Automated FX Fund Simulator":
     st.header("🤖 Emotionless Paper-Trading Simulator Engine")
     st.caption("Tracks simulated virtual positions in real-time based strictly on mechanical system signals.")
