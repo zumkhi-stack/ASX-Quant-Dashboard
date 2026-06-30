@@ -112,11 +112,12 @@ if app_mode == "Automated FX Fund Simulator":
     st.header("🤖 Emotionless Paper-Trading Simulator Engine")
     st.caption("Tracks simulated virtual positions in real-time based strictly on mechanical system signals.")
 
-    # 1. Initialize Virtual Core Account Balance in Memory
+    # 1. Initialize Virtual Core Account Balance & Ledger History in Memory
     if "fx_account" not in st.session_state:
         st.session_state.fx_account = {
             "cash": 50000.00,        # Initial Sandbox Balance ($ AUD)
-            "positions": {}          # Stores open pairs
+            "positions": {},         # Stores open pairs
+            "ledger": []             # NEW: Stores closed trades history list
         }
 
     # 2. Strategy Tuning Controls
@@ -126,7 +127,7 @@ if app_mode == "Automated FX Fund Simulator":
 
     # Reset Portfolio Button
     if st.sidebar.button("Wipe Sandbox & Reset Cash"):
-        st.session_state.fx_account = {"cash": 50000.00, "positions": {}}
+        st.session_state.fx_account = {"cash": 50000.00, "positions": {}, "ledger": []}
         st.rerun()
 
     # 3. Pull Current Live Engine Signal Structures
@@ -165,9 +166,27 @@ if app_mode == "Automated FX Fund Simulator":
                 if hit_stop or structural_exit:
                     return_multiplier = price / pos["entry"]
                     liquidated_cash = pos["size"] * return_multiplier
+                    
+                    # Calculate metric data for the ledger record
+                    pnl_pct = ((price - pos["entry"]) / pos["entry"]) * 100
+                    pnl_cash = (pos["size"] / pos["entry"]) * (price - pos["entry"])
+                    reason = "🛑 STOP LOSS" if hit_stop else "🚨 GANN REVERSAL"
+                    
+                    # NEW: Append final trade data to the historical ledger BEFORE deleting
+                    st.session_state.fx_account["ledger"].append({
+                        "Asset Pair": name,
+                        "Entry Time": pos["timestamp"],
+                        "Exit Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "Entry Rate": f"{pos['entry']:.4f}",
+                        "Exit Rate": f"{price:.4f}",
+                        "Reason": reason,
+                        "Return %": f"{pnl_pct:+.2f}%",
+                        "Final P&L ($)": f"${pnl_cash:+.2f}"
+                    })
+                    
+                    # Update core account balance
                     st.session_state.fx_account["cash"] += liquidated_cash
                     del st.session_state.fx_account["positions"][name]
-                    reason = "🛑 STOP LOSS" if hit_stop else "🚨 STRUCTURAL BREAKDOWN"
                     st.toast(f"SYSTEM EXECUTION: Closed {name} due to {reason}")
 
         # 5. LIVE ACCOUNT DASHBOARD METRICS DISPLAY
@@ -197,15 +216,26 @@ if app_mode == "Automated FX Fund Simulator":
         m1, m2, m3 = st.columns(3)
         m1.metric("Available Virtual Cash", f"${st.session_state.fx_account['cash']:,.2f} AUD")
         m2.metric("Total Account Equity (Net)", f"${total_equity:,.2f} AUD")
-        m3.metric("Net Total Returns", f"${total_pnl:,.2f} AUD", delta=f"{total_pnl:+.2f}")
+        m3.metric("Net Total Returns (All-Time)", f"${total_pnl:,.2f} AUD", delta=f"{total_pnl:+.2f}")
 
         st.markdown("---")
         st.subheader("📋 Active Automated Open Positions")
-        
         if active_rows:
             st.dataframe(pd.DataFrame(active_rows), hide_index=True, use_container_width=True)
         else:
-            st.info("System is scanning. No assets currently meet execution criteria.")
+            st.info("System is scanning. No assets currently meet open execution criteria.")
+
+        # NEW: 6. CLOSED TRADES HISTORICAL LEDGER TABLE DISPLAY
+        st.markdown("---")
+        st.subheader("📚 Historical Closed Ledger (Real-Time Performance Track)")
+        if st.session_state.fx_account["ledger"]:
+            ledger_df = pd.DataFrame(st.session_state.fx_account["ledger"])
+            # Display history table reverse chronologically (newest exits at the top)
+            st.dataframe(ledger_df.iloc[::-1], hide_index=True, use_container_width=True)
+        else:
+            st.info("No closed trades archived yet for this session. Trades appear here instantly when stopped out or structurally exited.")
+
+elif app_mode == "Central Bank Rate Matrix":
 
 elif app_mode == "Central Bank Rate Matrix":
     st.header("🏦 Global Central Bank Interest Yield Engine")
