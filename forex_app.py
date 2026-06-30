@@ -107,27 +107,116 @@ def fetch_forex_dataset_pool(ticker_list):
     return compiled_results
 
 # --- FX WORKSPACES INTERFACE ROUTING ---
-if app_mode == "Automated FX Fund Simulator":
-    st.header("🤖 Automated FX Sandbox Portfolio Allocation")
-    max_risk = st.sidebar.slider("Max Execution Risk Stop %", 0.5, 5.0, 1.5, step=0.1)
-    alloc_pool = st.sidebar.number_input("Sandbox Pool Capital ($ AUD)", value=50000)
+elif app_mode == "Automated FX Fund Simulator":
+    st.header("🤖 Emotionless Paper-Trading Simulator Engine")
+    st.caption("Tracks simulated virtual positions in real-time based strictly on mechanical system signals.")
 
-    with st.spinner("Processing Strategy Matrix..."): data_pool = fetch_forex_dataset_pool(FOREX_MAJORS)
+    # 1. Initialize Virtual Core Account Balance in Memory
+    if "fx_account" not in st.session_state:
+        st.session_state.fx_account = {
+            "cash": 50000.00,        # Initial Sandbox Balance ($ AUD)
+            "positions": {}          # Stores open pairs: {"AUDUSD": {"entry": 0.6620, "size": 10000, "stop": 0.6520}}
+        }
+
+    # 2. Strategy Tuning Controls
+    st.sidebar.subheader("⚙️ Automated Rule Configurations")
+    risk_pct = st.sidebar.slider("Execution Trailing Risk Stop %", 0.5, 5.0, 1.5, step=0.1)
+    trade_size = st.sidebar.number_input("Fixed Size Per Trade ($ Base Units)", value=10000, step=1000)
+
+    # Reset Portfolio Button
+    if st.sidebar.button("Wipe Sandbox & Reset Cash"):
+        st.session_state.fx_account = {"cash": 50000.00, "positions": {}}
+        st.rerun()
+
+    # 3. Pull Current Live Engine Signal Structures
+    with st.spinner("Processing automated execution feed..."): 
+        data_pool = fetch_forex_dataset_pool(FOREX_MAJORS)
+
     if data_pool:
-        df_p = pd.DataFrame(data_pool)
-        top_positions = df_p.head(4).copy()
+        # Convert engine pool output to a structured dictionary for easy indexing
+        current_market = {item["Name"]: item for item in data_pool}
         
-        cash = alloc_pool / len(top_positions)
-        top_positions["Allocated Capital"] = cash
-        top_positions["Stop Level"] = top_positions["Entry Price"] * (1 - (max_risk / 100))
-        top_positions["Return %"] = ((top_positions["Price"] - top_positions["Entry Price"]) / top_positions["Entry Price"]) * 100
-        top_positions["P&L ($)"] = (cash / top_positions["Entry Price"]) * (top_positions["Price"] - top_positions["Entry Price"])
+        # 4. BACKGROUND AUTOMATION LOOP (No Emotion Execution Engine)
+        for name, asset in current_market.items():
+            gann_up = "GANN UP" in asset["Gann Signal"]
+            gann_down = "GANN DOWN" in asset["Gann Signal"]
+            is_bullish = asset["is_bullish"]
+            price = asset["Price"]
+
+            # --- AUTOMATED ENTRY LOGIC ---
+            # Condition: Trend is bullish, Gann confirms Up-Swing, and we don't already own it
+            if is_bullish and gann_up and (name not in st.session_state.fx_account["positions"]):
+                if st.session_state.fx_account["cash"] >= trade_size:
+                    # Deduct virtual capital allocation
+                    st.session_state.fx_account["cash"] -= trade_size
+                    # Log position details
+                    st.session_state.fx_account["positions"][name] = {
+                        "entry": price,
+                        "size": trade_size,
+                        "stop_loss": price * (1 - (risk_pct / 100)),
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
+                    }
+                    st.toast(f"🎯 AUTOMATED BUY ORDER EXECUTED: {name} at {price}")
+
+            # --- AUTOMATED EXIT LOGIC (Stop Loss or Structural Breakdown) ---
+            if name in st.session_state.fx_account["positions"]:
+                pos = st.session_state.fx_account["positions"][name]
+                
+                # Check if price hit our mechanical stop loss or trend structure broken down
+                hit_stop = price <= pos["stop_loss"]
+                structural_exit = gann_down
+
+                if hit_stop or structural_exit:
+                    # Calculate final payout valuation
+                    return_multiplier = price / pos["entry"]
+                    liquidated_cash = pos["size"] * return_multiplier
+                    
+                    # Return funds back to virtual vault account balance
+                    st.session_state.fx_account["cash"] += liquidated_cash
+                    del st.session_state.fx_account["positions"][name]
+                    
+                    reason = "🛑 STOP LOSS" if hit_stop else "🚨 STRUCTURAL BREAKDOWN"
+                    st.toast(f"SYSTEM EXECUTION: Closed {name} due to {reason}")
+
+        # 5. LIVE ACCOUNT DASHBOARD METRICS DISPLAY
+        open_positions = st.session_state.fx_account["positions"]
         
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Pairs Active", len(top_positions))
-        c2.metric("Size Per Pair", f"${cash:,.2f}")
-        c3.metric("Total P&L", f"${top_positions['P&L ($)'].sum():,.2f}")
-        st.dataframe(top_positions[['Name', 'Entry Price', 'Price', 'Allocated Capital', 'P&L ($)', 'Return %', 'Stop Level']], hide_index=True, use_container_width=True)
+        # Calculate overall floating equity metric valuation
+        current_floating_value = 0.0
+        active_rows = []
+        
+        for name, pos in open_positions.items():
+            curr_price = current_market[name]["Price"]
+            pnl_pct = ((curr_price - pos["entry"]) / pos["entry"]) * 100
+            pnl_cash = (pos["size"] / pos["entry"]) * (curr_price - pos["entry"])
+            current_floating_value += (pos["size"] + pnl_cash)
+            
+            active_rows.append({
+                "Asset Pair": name,
+                "Execution Time": pos["timestamp"],
+                "Entry Rate": f"{pos['entry']:.4f}",
+                "Current Rate": f"{curr_price:.4f}",
+                "Stop Level": f"{pos['stop_loss']:.4f}",
+                "Return %": f"{pnl_pct:+.2f}%",
+                "Floating P&L ($)": f"${pnl_cash:+.2f}"
+            })
+
+        total_equity = st.session_state.fx_account["cash"] + current_floating_value
+        total_pnl = total_equity - 50000.00
+
+        # Draw metrics banner
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Available Virtual Cash", f"${st.session_state.fx_account['cash']:,.2f} AUD")
+        m2.metric("Total Account Equity (Net)", f"${total_equity:,.2f} AUD")
+        m3.metric("Net Total Returns", f"${total_pnl:,.2f} AUD", delta=f"{total_pnl:+.2f}")
+
+        st.markdown("---")
+        st.subheader("📋 Active Automated Open Positions")
+        
+        if active_rows:
+            st.dataframe(pd.DataFrame(active_rows), hide_index=True, use_container_width=True)
+        else:
+            st.info("System is scanning. No assets currently meet execution criteria.")
 
 elif app_mode == "Central Bank Rate Matrix":
     st.header("🏦 Global Central Bank Interest Yield Engine")
