@@ -23,7 +23,14 @@ components.html("""
 </script></div>""", height=50)
 
 # --- FOREX TRACKED UNIVERSE ---
-FOREX_MAJORS = ["AUDUSD=X", "AUDJPY=X", "EURUSD=X", "GBPUSD=X", "USDJPY=X", "NZDUSD=X"]
+FOREX_MAJORS = [
+    # Majors & G10 Drivers
+    "AUDUSD=X", "AUDJPY=X", "EURUSD=X", "GBPUSD=X", "USDJPY=X", "NZDUSD=X", "USDCAD=X", "USDCHF=X",
+    # Liquid Crosses
+    "EURGBP=X", "EURJPY=X", "GBPJPY=X", "AUDNZD=X", "EURAUD=X", "GBPAUD=X",
+    # Key Commodity/Emerging Proxies
+    "USDSGD=X", "USDCNH=X", "USDMXN=X"
+]
 
 st.sidebar.header("🛡️ Global Forex Router")
 raw_search = st.sidebar.text_input("Currency Search (e.g. AUDUSD, EURGBP)", "").strip().upper()
