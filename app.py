@@ -129,27 +129,174 @@ def fetch_master_dataset_pool(ticker_list):
 
 # --- WORKSPACES INTERFACE ROUTING ---
 if app_mode == "Automated Quant Fund Simulator":
-    st.header(f"🤖 Quant Management Simulator ({index_tier})")
-    max_risk = st.sidebar.slider("Max Trailing Stop-Loss %", 1.0, 15.0, 5.0, step=0.5)
-    alloc_pool = st.sidebar.number_input("Sandbox Capital ($ AUD)", value=20000)
+    st.header("⚙️ ASX Blue Chip Manual Execution Terminal")
+    st.caption("Review algorithmic stock entry/exit signals below and lock positions into your portfolio manually to track them accurately.")
 
-    with st.spinner("Processing Strategy Weights..."): data_pool = fetch_master_dataset_pool(active_universe)
+    # 1. Initialize Virtual Core Account Balance & Ledger History in Memory
+    if "stock_account" not in st.session_state:
+        st.session_state.stock_account = {
+            "cash": 50000.00,        # Initial Sandbox Balance ($ AUD)
+            "positions": {},         # Stores permanently locked open equities
+            "ledger": []             # Stores closed trades history list
+        }
+
+    # 2. Strategy Tuning Controls
+    st.sidebar.subheader("⚙️ Automated Rule Configurations")
+    max_risk = st.sidebar.slider("Max Trailing Stop-Loss %", 1.0, 15.0, 5.0, step=0.5)
+    trade_size = st.sidebar.number_input("Fixed Size Per Trade ($ AUD Units)", value=10000, step=1000)
+
+    # Reset Portfolio Button
+    if st.sidebar.button("Wipe Sandbox & Reset Cash"):
+        st.session_state.stock_account = {"cash": 50000.00, "positions": {}, "ledger": []}
+        st.rerun()
+
+    # 3. Pull Current Live Engine Signal Structures
+    with st.spinner("Processing live equity signals..."): 
+        data_pool = fetch_master_dataset_pool(active_universe)
+
     if data_pool:
-        df_p = pd.DataFrame(data_pool)
-        top_5 = df_p[(df_p["is_bullish"]==True) & (df_p["Gann Signal"].str.contains("UP"))].sort_values(by="Dist 52W High %").head(5)
-        if not top_5.empty:
-            cash = alloc_pool / len(top_5)
-            top_5["Allocated Capital"] = cash
-            top_5["Stop Level"] = top_5["Entry Price"] * (1 - (max_risk / 100))
-            top_5["Return %"] = ((top_5["Price"] - top_5["Entry Price"]) / top_5["Entry Price"]) * 100
-            top_5["P&L ($)"] = (cash / top_5["Entry Price"]) * (top_5["Price"] - top_5["Entry Price"])
+        current_market = {item["Name"]: item for item in data_pool}
+        
+        # --- STRATEGY SIGNAL FEED SCANNER ---
+        st.subheader("📡 Live Strategy Signal Feed")
+        signal_rows = []
+        for name, asset in current_market.items():
+            gann_up = "GANN UP" in asset["Gann Signal"]
+            is_bullish = asset["is_bullish"]
             
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Positions Loaded", len(top_5))
-            c2.metric("Weight Allocation", f"${cash:,.2f}")
-            c3.metric("Total Sandbox P&L", f"${top_5['P&L ($)'].sum():,.2f}")
-            st.dataframe(top_5[['Name', 'Entry Price', 'Price', 'Allocated Capital', 'P&L ($)', 'Return %', 'Stop Level']], hide_index=True, use_container_width=True)
-        else: st.warning("No equities currently match alignment rules.")
+            # Check tracking status
+            if name in st.session_state.stock_account["positions"]:
+                status = "💼 Already in Portfolio"
+            elif is_bullish and gann_up:
+                status = "🟢 BUY SIGNAL GENERATED"
+            else:
+                status = "⚪ Scanning / Neutral"
+                
+            signal_rows.append({
+                "Ticker": name,
+                "Current Price": f"${asset['Price']:.2f}",
+                "Gann Direction": asset["Gann Signal"],
+                "Trend Structure": "🚀 BULLISH" if is_bullish else "⚠️ BEARISH",
+                "System Action Alert": status
+            })
+        st.dataframe(pd.DataFrame(signal_rows), hide_index=True, use_container_width=True)
+
+        # --- PORTFOLIO ORDER SUBMISSION INTERFACES ---
+        st.markdown("---")
+        st.subheader("🕹️ Equity Order Execution Pad")
+        
+        # Filter down stocks that have an active buy signal and aren't owned yet
+        available_buys = [r["Ticker"] for r in signal_rows if "BUY SIGNAL" in r["System Action Alert"]]
+        
+        col_exec1, col_exec2 = st.columns(2)
+        
+        with col_exec1:
+            if available_buys:
+                selected_buy = st.selectbox("Select Active Signal Ticker to Buy", available_buys)
+                if st.button(f"🚀 Execute Market BUY Order: {selected_buy}"):
+                    if st.session_state.stock_account["cash"] >= trade_size:
+                        price_now = current_market[selected_buy]["Price"]
+                        st.session_state.stock_account["cash"] -= trade_size
+                        # Lock it into memory permanently
+                        st.session_state.stock_account["positions"][selected_buy] = {
+                            "entry": price_now,
+                            "size": trade_size,
+                            "stop_loss": price_now * (1 - (max_risk / 100)),
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
+                        }
+                        st.toast(f"Locked {selected_buy} into equity portfolio!")
+                        st.rerun()
+                    else:
+                        st.error("Insufficient Cash Pool.")
+            else:
+                st.info("No active structural buy alerts ready for deployment right now.")
+
+        with col_exec2:
+            active_owned = list(st.session_state.stock_account["positions"].keys())
+            if active_owned:
+                selected_exit = st.selectbox("Select Active Stock to Liquidate", active_owned)
+                if st.button(f"🚨 Execute Market SELL Order: {selected_exit}"):
+                    pos = st.session_state.stock_account["positions"][selected_exit]
+                    price_now = current_market[selected_exit]["Price"]
+                    
+                    return_multiplier = price_now / pos["entry"]
+                    liquidated_cash = pos["size"] * return_multiplier
+                    pnl_pct = ((price_now - pos["entry"]) / pos["entry"]) * 100
+                    pnl_cash = (pos["size"] / pos["entry"]) * (price_now - pos["entry"])
+                    
+                    st.session_state.stock_account["ledger"].append({
+                        "Asset": selected_exit, "Entry Time": pos["timestamp"], "Exit Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "Entry Price": f"${pos['entry']:.2f}", "Exit Price": f"${price_now:.2f}", "Reason": "🎯 MANUAL TARGET EXIT",
+                        "Return %": f"{pnl_pct:+.2f}%", "Final P&L ($)": f"${pnl_cash:+.2f}"
+                    })
+                    st.session_state.stock_account["cash"] += liquidated_cash
+                    del st.session_state.stock_account["positions"][selected_exit]
+                    st.toast(f"Successfully Sold {selected_exit}!")
+                    st.rerun()
+            else:
+                st.info("No active stock positions to close manually.")
+
+        # --- BACKGROUND PROTECTION AUTOMATION (Stop Loss Tracker) ---
+        for name in list(st.session_state.stock_account["positions"].keys()):
+            pos = st.session_state.stock_account["positions"][name]
+            price = current_market[name]["Price"]
+            
+            if price <= pos["stop_loss"]:
+                return_multiplier = price / pos["entry"]
+                liquidated_cash = pos["size"] * return_multiplier
+                pnl_pct = ((price - pos["entry"]) / pos["entry"]) * 100
+                pnl_cash = (pos["size"] / pos["entry"]) * (price - pos["entry"])
+                
+                st.session_state.stock_account["ledger"].append({
+                    "Asset": name, "Entry Time": pos["timestamp"], "Exit Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "Entry Price": f"${pos['entry']:.2f}", "Exit Price": f"${price:.2f}", "Reason": "🛑 STOP LOSS TRIGGERED",
+                    "Return %": f"{pnl_pct:+.2f}%", "Final P&L ($)": f"${pnl_cash:+.2f}"
+                })
+                st.session_state.stock_account["cash"] += liquidated_cash
+                del st.session_state.stock_account["positions"][name]
+                st.toast(f"CRITICAL RISK ACTION: {name} hit hard Stop Loss limit.")
+                st.rerun()
+
+        # 4. LIVE ACCOUNT DASHBOARD METRICS DISPLAY
+        open_positions = st.session_state.stock_account["positions"]
+        current_floating_value = 0.0
+        active_rows = []
+        
+        for name, pos in open_positions.items():
+            curr_price = current_market[name]["Price"]
+            pnl_pct = ((curr_price - pos["entry"]) / pos["entry"]) * 100
+            pnl_cash = (pos["size"] / pos["entry"]) * (curr_price - pos["entry"])
+            current_floating_value += (pos["size"] + pnl_cash)
+            
+            active_rows.append({
+                "Asset": name, "Execution Time": pos["timestamp"], "Entry Price": f"${pos['entry']:.2f}",
+                "Current Price": f"${curr_price:.2f}", "Stop Level": f"${pos['stop_loss']:.2f}",
+                "Return Status": f"{pnl_pct:+.2f}%", "Floating P&L ($)": f"${pnl_cash:+.2f}"
+            })
+
+        total_equity = st.session_state.stock_account["cash"] + current_floating_value
+        total_pnl = total_equity - 50000.00
+
+        st.markdown("---")
+        st.subheader("📋 Core Live Open Portfolio Account Status")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Available Balance Cash", f"${st.session_state.stock_account['cash']:,.2f} AUD")
+        m2.metric("Total Net Portfolio Equity", f"${total_equity:,.2f} AUD")
+        m3.metric("Net Total Realized Returns", f"${total_pnl:,.2f} AUD", delta=f"{total_pnl:+.2f}")
+
+        if active_rows:
+            st.dataframe(pd.DataFrame(active_rows), hide_index=True, use_container_width=True)
+        else:
+            st.info("Your portfolio is currently empty. Use the order pad above to execute active signals.")
+
+        # 5. HISTORICAL RECORDS LEDGER
+        st.markdown("---")
+        st.subheader("📚 Historical Closed Ledger (Real-Time Performance Track)")
+        if st.session_state.stock_account["ledger"]:
+            ledger_df = pd.DataFrame(st.session_state.stock_account["ledger"])
+            st.dataframe(ledger_df.iloc[::-1], hide_index=True, use_container_width=True)
+        else:
+            st.info("No closed trades archived yet for this session.")
 
 elif app_mode == "Trend Momentum Screener":
     st.header(f"🟢 Elite Momentum Screener ({index_tier})")
