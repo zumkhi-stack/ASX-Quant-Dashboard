@@ -44,4 +44,5 @@ ASX_200_ADDITIONS = [
     "BRU.AX", "BSL.AX", "BTI.AX", "BTR.AX", "BVS.AX", "BWP.AX", "BXB.AX", "C6C.AX", "CAE.AX", "CAF.AX",
     "CAJ.AX", "CAR.AX", "CBA.AX", "CCV.AX", "CDA.AX", "CDD.AX", "CDP.AX", "CE1.AX", "CEL.AX", "CEN.AX",
     "CGC.AX", "CGF.AX", "CHC.AX", "CHH.AX", "CHL.AX", "CHR.AX", "CIE.AX", "CIM.AX", "CIN.AX", "CIP.AX",
-    "CKF.AX", "CLA.AX", "CLH.AX", "CLQ.AX", "CLV.AX", "CL
+    "CKF.AX", "CLA.AX", "CLH.AX", "CLQ.AX", "CLV.AX", "CLW.AX", "CMW.AX", "CNI.AX", "CNU.AX", "COB.AX"
+]
