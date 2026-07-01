@@ -128,17 +128,31 @@ def fetch_master_dataset_pool(ticker_list):
     return compiled_results
 
 # --- WORKSPACES INTERFACE ROUTING ---
-if app_mode == "Automated Quant Fund Simulator":
-    st.header("⚙️ ASX Blue Chip Manual Execution Terminal")
-    st.caption("Review algorithmic stock entry/exit signals below and lock positions into your portfolio manually to track them accurately.")
+import json
+import os
 
-    # 1. Initialize Virtual Core Account Balance & Ledger History in Memory
-    if "stock_account" not in st.session_state:
-        st.session_state.stock_account = {
-            "cash": 50000.00,        # Initial Sandbox Balance ($ AUD)
-            "positions": {},         # Stores permanently locked open equities
-            "ledger": []             # Stores closed trades history list
-        }
+if app_mode == "Automated Quant Fund Simulator":
+    st.header("⚙️ ASX Blue Chip Manual Execution Terminal (Persistent Storage)")
+    st.caption("Positions are saved permanently to the database file and will survive page reloads and server restarts.")
+
+    # --- PERMANENT STORAGE DATABASE LOGIC ---
+    STOCK_DB_FILE = "stock_portfolio.json"
+
+    def load_stock_db():
+        if os.path.exists(STOCK_DB_FILE):
+            try:
+                with open(STOCK_DB_FILE, "r") as f:
+                    return json.load(f)
+            except:
+                pass
+        return {"cash": 50000.00, "positions": {}, "ledger": []}
+
+    def save_stock_db(data):
+        with open(STOCK_DB_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+
+    # Load data from physical disk file into current session
+    st.session_state.stock_account = load_stock_db()
 
     # 2. Strategy Tuning Controls
     st.sidebar.subheader("⚙️ Automated Rule Configurations")
@@ -147,7 +161,10 @@ if app_mode == "Automated Quant Fund Simulator":
 
     # Reset Portfolio Button
     if st.sidebar.button("Wipe Sandbox & Reset Cash"):
+        if os.path.exists(STOCK_DB_FILE):
+            os.remove(STOCK_DB_FILE)
         st.session_state.stock_account = {"cash": 50000.00, "positions": {}, "ledger": []}
+        save_stock_db(st.session_state.stock_account)
         st.rerun()
 
     # 3. Pull Current Live Engine Signal Structures
@@ -164,7 +181,6 @@ if app_mode == "Automated Quant Fund Simulator":
             gann_up = "GANN UP" in asset["Gann Signal"]
             is_bullish = asset["is_bullish"]
             
-            # Check tracking status
             if name in st.session_state.stock_account["positions"]:
                 status = "💼 Already in Portfolio"
             elif is_bullish and gann_up:
@@ -185,9 +201,7 @@ if app_mode == "Automated Quant Fund Simulator":
         st.markdown("---")
         st.subheader("🕹️ Equity Order Execution Pad")
         
-        # Filter down stocks that have an active buy signal and aren't owned yet
         available_buys = [r["Ticker"] for r in signal_rows if "BUY SIGNAL" in r["System Action Alert"]]
-        
         col_exec1, col_exec2 = st.columns(2)
         
         with col_exec1:
@@ -197,14 +211,14 @@ if app_mode == "Automated Quant Fund Simulator":
                     if st.session_state.stock_account["cash"] >= trade_size:
                         price_now = current_market[selected_buy]["Price"]
                         st.session_state.stock_account["cash"] -= trade_size
-                        # Lock it into memory permanently
                         st.session_state.stock_account["positions"][selected_buy] = {
                             "entry": price_now,
                             "size": trade_size,
                             "stop_loss": price_now * (1 - (max_risk / 100)),
                             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
                         }
-                        st.toast(f"Locked {selected_buy} into equity portfolio!")
+                        save_stock_db(st.session_state.stock_account) # Save to Disk File
+                        st.toast(f"Locked {selected_buy} into equity portfolio database!")
                         st.rerun()
                     else:
                         st.error("Insufficient Cash Pool.")
@@ -231,12 +245,14 @@ if app_mode == "Automated Quant Fund Simulator":
                     })
                     st.session_state.stock_account["cash"] += liquidated_cash
                     del st.session_state.stock_account["positions"][selected_exit]
+                    save_stock_db(st.session_state.stock_account) # Save to Disk File
                     st.toast(f"Successfully Sold {selected_exit}!")
                     st.rerun()
             else:
                 st.info("No active stock positions to close manually.")
 
         # --- BACKGROUND PROTECTION AUTOMATION (Stop Loss Tracker) ---
+        db_changed = False
         for name in list(st.session_state.stock_account["positions"].keys()):
             pos = st.session_state.stock_account["positions"][name]
             price = current_market[name]["Price"]
@@ -254,8 +270,12 @@ if app_mode == "Automated Quant Fund Simulator":
                 })
                 st.session_state.stock_account["cash"] += liquidated_cash
                 del st.session_state.stock_account["positions"][name]
+                db_changed = True
                 st.toast(f"CRITICAL RISK ACTION: {name} hit hard Stop Loss limit.")
-                st.rerun()
+        
+        if db_changed:
+            save_stock_db(st.session_state.stock_account) # Save to Disk File
+            st.rerun()
 
         # 4. LIVE ACCOUNT DASHBOARD METRICS DISPLAY
         open_positions = st.session_state.stock_account["positions"]
