@@ -50,12 +50,17 @@ st.sidebar.header("🛡️ Strategy Universe Selector")
 index_tier = st.sidebar.selectbox("Choose Core Index Target", ["ASX 50", "ASX 100", "ASX 200"])
 
 # Dynamic mapping of tracking loops
-if index_tier == "ASX 50":
-    active_universe = ASX_50
-elif index_tier == "ASX 100":
-    active_universe = list(set(ASX_50 + ASX_100_ADDITIONS))
-else:
-    active_universe = list(set(ASX_50 + ASX_100_ADDITIONS + ASX_200_ADDITIONS))
+# 3. Pull Current Live Engine Signal Structures Dynamically Based on Sidebar Selection
+    if index_tier == "ASX 50":
+        selected_universe = ASX_50
+    elif index_tier == "ASX 100":
+        selected_universe = ASX_50 + ASX_100_ADDITIONS
+    else:
+        selected_universe = ASX_50 + ASX_100_ADDITIONS + ASX_200_ADDITIONS
+
+    with st.spinner("Processing live equity signals..."): 
+        # Calls your original fetching function using the dynamic sidebar universe array
+        data_pool = fetch_master_dataset_pool(selected_universe)
 
 raw_search = st.sidebar.text_input("Stock Search (e.g. PLS, REA, BHP)", "").strip().upper()
 app_mode = st.sidebar.selectbox("App Workspace", ["Automated Quant Fund Simulator", "Trend Momentum Screener", "Fundamental Value Searcher", "WD Gann Mechanical Screener", "Interactive Charting Workspace"])
