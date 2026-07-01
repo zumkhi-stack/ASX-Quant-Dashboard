@@ -171,9 +171,16 @@ if app_mode == "Automated Quant Fund Simulator":
         save_stock_db(st.session_state.stock_account)
         st.rerun()
 
-    # 3. Pull Current Live Engine Signal Structures
+    # 3. Pull Current Live Engine Signal Structures Dynamically Based on Sidebar Selection
+    if index_tier == "ASX 50":
+        selected_universe = ASX_50
+    elif index_tier == "ASX 100":
+        selected_universe = ASX_50 + ASX_100_ADDITIONS
+    else:
+        selected_universe = ASX_50 + ASX_100_ADDITIONS + ASX_200_ADDITIONS
+
     with st.spinner("Processing live equity signals..."): 
-        data_pool = fetch_master_dataset_pool(active_universe)
+        data_pool = fetch_master_dataset_pool(selected_universe)
 
     if data_pool:
         current_market = {item["Name"]: item for item in data_pool}
