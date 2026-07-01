@@ -59,7 +59,6 @@ index_tier = st.sidebar.selectbox("Choose Core Index Target", ["ASX 50", "ASX 10
         selected_universe = ASX_50 + ASX_100_ADDITIONS + ASX_200_ADDITIONS
 
     with st.spinner("Processing live equity signals..."): 
-        # Calls your original fetching function using the dynamic sidebar universe array
         data_pool = fetch_master_dataset_pool(selected_universe)
 
 raw_search = st.sidebar.text_input("Stock Search (e.g. PLS, REA, BHP)", "").strip().upper()
