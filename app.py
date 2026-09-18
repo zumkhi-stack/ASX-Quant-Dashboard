@@ -160,9 +160,18 @@ def fetch_master_dataset_pool(ticker_list):
             dy_val = dy_raw * 100 if dy_raw is not None and isinstance(dy_raw, (int, float)) else np.nan
 
             compiled_results.append({
-                "Ticker": tk, "Chart Link": l_url, "Name": r_name, "Entry Price": p_prev, "Price": p_curr, 
-                "Dist 52W High %": d_high, "is_bullish": is_bull, "Gann Signal": g_sig, "Current Candle Type": b_type, 
-                "Trailing P/E": pe_val, "Profit Margin %": pm_val, "Div Yield %": dy_val
+                "Ticker": tk, 
+                "Chart Link": l_url, 
+                "Name": r_name, 
+                "Entry Price": p_prev, 
+                "Price": p_curr, 
+                "Dist 52W High %": d_high, 
+                "is_bullish": is_bull, 
+                "Gann Signal": g_sig, 
+                "Current Candle Type": b_type, 
+                "Trailing P/E": pe_val if not np.isnan(pe_val) else 0.0, 
+                "Profit Margin %": pm_val if not np.isnan(pm_val) else -999.0, 
+                "Div Yield %": dy_val if not np.isnan(dy_val) else 0.0
             })
         except Exception: 
             continue
@@ -187,13 +196,9 @@ if app_mode == "Fundamental & Insider Screener":
         # Interactive Manual Controls
         c1, c2 = st.columns(2)
         with c1:
-            min_margin = st.slider("Min Profit Margin %", min_value=-50.0, max_value=50.0, value=10.0, step=1.0)
+            min_margin = st.slider("Min Profit Margin %", min_value=-50.0, max_value=50.0, value=0.0, step=1.0)
         with c2:
             min_div = st.slider("Min Dividend Yield %", min_value=0.0, max_value=15.0, value=0.0, step=0.5)
-
-        # Fill missing values for clean filtering
-        df_fund["Profit Margin %"] = df_fund["Profit Margin %"].fillna(-999.0)
-        df_fund["Div Yield %"] = df_fund["Div Yield %"].fillna(0.0)
 
         # Apply User Filters
         filtered_df = df_fund[
@@ -207,19 +212,22 @@ if app_mode == "Fundamental & Insider Screener":
         m1.metric("Total Stocks Screened", len(df_fund))
         m2.metric("Matching Strategy Criteria", len(filtered_df))
 
-        # Render Data Table
-        st.dataframe(
-            filtered_df[['Name', 'Chart Link', 'Price', 'Profit Margin %', 'Div Yield %', 'Trailing P/E']],
-            column_config={
-                "Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"),
-                "Price": st.column_config.NumberColumn(format="$%.2f"),
-                "Profit Margin %": st.column_config.NumberColumn(format="%.2f%%"),
-                "Div Yield %": st.column_config.NumberColumn(format="%.2f%%"),
-                "Trailing P/E": st.column_config.NumberColumn(format="%.2f")
-            },
-            hide_index=True,
-            use_container_width=True
-        )
+        # Render Data Table cleanly
+        if not filtered_df.empty:
+            st.dataframe(
+                filtered_df[['Name', 'Ticker', 'Price', 'Profit Margin %', 'Div Yield %', 'Trailing P/E', 'Chart Link']],
+                column_config={
+                    "Chart Link": st.column_config.LinkColumn("TradingView Chart", display_text="📈 View"),
+                    "Price": st.column_config.NumberColumn("Price ($)", format="$%.2f"),
+                    "Profit Margin %": st.column_config.NumberColumn("Profit Margin %", format="%.2f%%"),
+                    "Div Yield %": st.column_config.NumberColumn("Dividend Yield %", format="%.2f%%"),
+                    "Trailing P/E": st.column_config.NumberColumn("Trailing P/E", format="%.2f")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+        else:
+            st.info("No stocks match the selected slider thresholds. Try lowering the Min Profit Margin slider.")
 
 # --- WORKSPACE 2: AUTOMATED QUANT FUND SIMULATOR ---
 elif app_mode == "Automated Quant Fund Simulator":
