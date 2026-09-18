@@ -177,11 +177,13 @@ def fetch_fundamental_insider_data(ticker_list):
         return records
 
     t = Ticker(ticker_list)
+    
     try:
+        inc_stmt = t.income_statement(frequency='a')
         financials = getattr(t, 'financial_data', {})
         insider = getattr(t, 'insider_transactions', None)
     except Exception:
-        financials, insider = {}, None
+        inc_stmt, financials, insider = None, {}, None
 
     for tk in ticker_list:
         try:
@@ -189,10 +191,23 @@ def fetch_fundamental_insider_data(ticker_list):
             fin_data = financials.get(tk, {}) if isinstance(financials, dict) else {}
             curr_price = fin_data.get('currentPrice', np.nan)
             
-            earnings_growth = fin_data.get('earningsGrowth', np.nan)
-            calc_growth = earnings_growth * 100 if earnings_growth is not None and not np.isnan(earnings_growth) else np.nan
+            calc_growth = np.nan
 
-            insider_status = "⚪ Neutral / No Recent Filings"
+            if isinstance(inc_stmt, pd.DataFrame) and not inc_stmt.empty:
+                if tk in inc_stmt.index:
+                    df_tk = inc_stmt.loc[tk].dropna(subset=['NetIncome']).sort_values(by='asOfDate')
+                    if len(df_tk) >= 2:
+                        recent_income = df_tk['NetIncome'].iloc[-1]
+                        prev_income = df_tk['NetIncome'].iloc[-2]
+                        if prev_income > 0:
+                            calc_growth = ((recent_income - prev_income) / prev_income) * 100
+
+            if np.isnan(calc_growth):
+                e_growth = fin_data.get('earningsGrowth', np.nan)
+                if e_growth is not None and not np.isnan(e_growth):
+                    calc_growth = e_growth * 100
+
+            insider_status = "⚪ No SEC/ASX Filings Detected"
             if isinstance(insider, pd.DataFrame) and not insider.empty:
                 if tk in insider.index:
                     df_ins = insider.loc[tk]
@@ -204,11 +219,11 @@ def fetch_fundamental_insider_data(ticker_list):
                         sells = df_ins['transactionText'].str.contains('Sale|Sell', case=False, na=False).sum()
                         
                         if buys > sells:
-                            insider_status = f"🟢 NET BUY ({buys} Buys, {sells} Sells)"
+                            insider_status = f"🟢 NET BUY ({buys} Buys)"
                         elif sells > buys:
-                            insider_status = f"🔴 NET SELL ({sells} Sells, {buys} Buys)"
+                            insider_status = f"🔴 NET SELL ({sells} Sells)"
                         elif buys > 0:
-                            insider_status = f"🟡 BALANCED ({buys} Buys / {sells} Sells)"
+                            insider_status = f"🟡 BALANCED ({buys} Trades)"
 
             if not np.isnan(calc_growth) and calc_growth >= 30.0:
                 growth_badge = f"🟢 {calc_growth:+.2f}% (HIGH GROWTH)"
