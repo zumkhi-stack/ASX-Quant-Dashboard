@@ -1,403 +1,283 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import yfinance as yf
 from yahooquery import Ticker
-import streamlit.components.v1 as components
-from datetime import datetime
 
-st.set_page_config(page_title="ASX Market Tracker Engine", layout="wide")
-st.title("📊 ASX Master Quantitative Command Center")
+# ==============================================================================
+# 1. PAGE CONFIGURATION & INITIALIZATION
+# ==============================================================================
+st.set_page_config(
+    page_title="Quant & Fundamental Stock Analysis Suite",
+    page_icon="📈",
+    layout="wide"
+)
 
-# --- TICKER TAPE UNIVERSE INDEX ---
-components.html("""
-<div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"></div>
-<script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
-{"symbols": [{"proName": "INDEX:XJO", "title": "ASX 200 Index"}, {"proName": "ASX:BHP", "title": "BHP Group"}, {"proName": "ASX:CBA", "title": "Commonwealth Bank"}, {"proName": "ASX:WBC", "title": "Westpac"}], "colorTheme": "light", "displayMode": "adaptive", "locale": "en"}
-</script></div>""", height=50)
-
-# --- UNIVERSE ARRAYS DEFINITION ---
-ASX_50 = [
-    "BHP.AX", "CBA.AX", "WBC.AX", "NAB.AX", "ANZ.AX", "MQG.AX", "WES.AX", "RIO.AX", "FMG.AX", "CSL.AX",
-    "WDS.AX", "TLS.AX", "TCL.AX", "WOW.AX", "QBE.AX", "GMG.AX", "MIN.AX", "APA.AX", "QAN.AX", "SPK.AX",
-    "REA.AX", "ALL.AX", "SHL.AX", "COH.AX", "IPL.AX", "BSL.AX", "PPT.AX", "WHC.AX", "ALQ.AX", "LYC.AX",
-    "BEN.AX", "BOQ.AX", "BLD.AX", "CAR.AX", "SGP.AX", "DXS.AX", "CHC.AX", "GPT.AX", "MGR.AX", "VCX.AX",
-    "AZJ.AX", "A2M.AX", "AMP.AX", "ANN.AX", "AST.AX", "ALX.AX", "EVN.AX", "IAG.AX", "MPL.AX", "SUN.AX"
+# ==============================================================================
+# 2. TICKER UNIVERSE DEFINITION
+# ==============================================================================
+# Example tickers (ASX universe as default base - easily expandable)
+ASX_200_SAMPLE = [
+    "BHP.AX", "CBA.AX", "CSL.AX", "WDS.AX", "NAB.AX",
+    "WBC.AX", "ANZ.AX", "MQG.AX", "TLS.AX", "WES.AX",
+    "WOW.AX", "RIO.AX", "FMG.AX", "PLS.AX", "NCM.AX"
 ]
 
-ASX_100_ADDITIONS = [
-    "ALU.AX", "ALX.AX", "AMP.AX", "ANN.AX", "APE.AX", "ARS.AX", "AWC.AX", "BEN.AX", "BKW.AX", "BOQ.AX", 
-    "BSL.AX", "BWP.AX", "BXB.AX", "CAR.AX", "CGF.AX", "CHC.AX", "CIN.AX", "CLW.AX", "CNI.AX", "COH.AX", 
-    "COL.AX", "CPU.AX", "CQR.AX", "CSR.AX", "CTC.AX", "CWN.AX", "CYP.AX", "DXS.AX", "EHE.AX", "ELD.AX", 
-    "FLT.AX", "FPH.AX", "GEM.AX", "GOZ.AX", "GPT.AX", "HDN.AX", "HLI.AX", "HVN.AX", "IEL.AX", "IFL.AX", 
-    "IFT.AX", "ILU.AX", "IPL.AX", "JBH.AX", "JHX.AX", "LLC.AX", "LNK.AX", "LYC.AX", "MGR.AX", "MND.AX"
+US_TECH_SAMPLE = [
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"
 ]
 
-ASX_200_ADDITIONS = [
-    "A2B.AX", "ABG.AX", "AFI.AX", "AGL.AX", "AIN.AX", "ALK.AX", "AMI.AX", "AMP.AX", "ANG.AX", "AO1.AX",
-    "APA.AX", "APE.AX", "API.AX", "APM.AX", "APX.AX", "ARB.AX", "ARE.AX", "ARG.AX", "ARU.AX", "ASB.AX",
-    "ASM.AX", "ASG.AX", "AST.AX", "ASX.AX", "AUB.AX", "AVN.AX", "AVV.AX", "AWC.AX", "AWE.AX", "AWI.AX",
-    "AX1.AX", "AZS.AX", "B4P.AX", "BAB.AX", "BAL.AX", "BAP.AX", "BCB.AX", "BCI.AX", "BFL.AX", "BGA.AX",
-    "BGL.AX", "BGP.AX", "BHP.AX", "BIF.AX", "BKI.AX", "BKL.AX", "BKW.AX", "BLD.AX", "BLX.AX", "BML.AX",
-    "BMT.AX", "BNA.AX", "BNL.AX", "BOA.AX", "BOQ.AX", "BOT.AX", "BOU.AX", "BPT.AX", "BRG.AX", "BRL.AX",
-    "BRU.AX", "BSL.AX", "BTI.AX", "BTR.AX", "BVS.AX", "BWP.AX", "BXB.AX", "C6C.AX", "CAE.AX", "CAF.AX",
-    "CAJ.AX", "CAR.AX", "CBA.AX", "CCV.AX", "CDA.AX", "CDD.AX", "CDP.AX", "CE1.AX", "CEL.AX", "CEN.AX",
-    "CGC.AX", "CGF.AX", "CHC.AX", "CHH.AX", "CHL.AX", "CHR.AX", "CIE.AX", "CIM.AX", "CIN.AX", "CIP.AX",
-    "CKF.AX", "CLA.AX", "CLH.AX", "CLQ.AX", "CLV.AX", "CLW.AX", "CMW.AX", "CNI.AX", "CNU.AX", "COB.AX"
-]
+# ==============================================================================
+# 3. SIDEBAR NAVIGATION & CONFIGURATION
+# ==============================================================================
+st.sidebar.title("📌 Navigation")
 
-# --- SIDEBAR FILTERS ---
-st.sidebar.header("🛡️ Strategy Universe Selector")
-index_tier = st.sidebar.selectbox("Choose Core Index Target", ["ASX 50", "ASX 100", "ASX 200"])
+index_tier = st.sidebar.selectbox(
+    "Select Stock Universe",
+    ["ASX Top Samples", "US Tech Leaders"]
+)
 
-# Dynamic mapping of tracking loops
-if index_tier == "ASX 50":
-    active_universe = ASX_50
-elif index_tier == "ASX 100":
-    active_universe = sorted(list(set(ASX_50 + ASX_100_ADDITIONS)))
+if index_tier == "ASX Top Samples":
+    active_universe = ASX_200_SAMPLE
 else:
-    active_universe = sorted(list(set(ASX_50 + ASX_100_ADDITIONS + ASX_200_ADDITIONS)))
+    active_universe = US_TECH_SAMPLE
 
-raw_search = st.sidebar.text_input("Stock Search (e.g. PLS, REA, BHP)", "").strip().upper()
-app_mode = st.sidebar.selectbox("App Workspace", [
-    "Automated Quant Fund Simulator", 
-    "Trend Momentum Screener", 
-    "Fundamental Value Searcher", 
-    "WD Gann Mechanical Screener", 
-    "Interactive Charting Workspace"
-])
+# Workspace selector including your new screener
+app_mode = st.sidebar.selectbox(
+    "App Workspace",
+    [
+        "Fundamental & Insider Screener",  # NEW WORKSPACE
+        "Automated Quant Fund Simulator",
+        "Trend Momentum Screener",
+        "WD Gann Mechanical Screener",
+        "Interactive Charting Workspace"
+    ]
+)
 
-if raw_search:
-    target_ticker = raw_search if raw_search.endswith(".AX") else f"{raw_search}.AX"
-    clean_symbol = raw_search.split('.')[0]
-else:
-    target_ticker = st.sidebar.selectbox("Select Active Asset", active_universe) if app_mode == "Interactive Charting Workspace" else active_universe[0]
-    clean_symbol = target_ticker.replace(".AX", "")
+# ==============================================================================
+# 4. HELPER DATA FETCHING FUNCTIONS
+# ==============================================================================
+@st.cache_data(ttl=3600)
+def fetch_fundamental_insider_data(ticker_list):
+    """
+    Fetches financial statements (Profit/Loss YoY growth) and 
+    director/promoter insider transactions for the requested ticker list.
+    """
+    records = []
+    if not ticker_list:
+        return records
 
-@st.cache_data(ttl=300)
-def fetch_master_dataset_pool(ticker_list):
-    compiled_results = []
-    if not ticker_list: 
-        return []
+    t = Ticker(ticker_list)
+
+    # 1. Fetch bulk financial & insider data via yahooquery
     try:
-        t = Ticker(ticker_list)
-        history = t.history(period="1y")
-        if history is None or (isinstance(history, pd.DataFrame) and history.empty): 
-            return []
-        
-        summary = getattr(t, 'summary_detail', {})
-        financials = getattr(t, 'financial_data', {})
-    except Exception: 
-        return []
+        financials = t.financial_data
+        income_stmt = t.get_financial_data(types=['NetIncome'], frequency='a')
+        insider = t.insider_transactions
+    except Exception as e:
+        st.error(f"Error connecting to Yahoo Finance API: {e}")
+        return records
 
-    cm, cd = datetime.now().month, datetime.now().day
-    is_node, n_type = False, ""
-    for m, d, t_name in [(3, 21, "CARDINAL"), (6, 22, "CARDINAL"), (9, 23, "CARDINAL"), (12, 22, "CARDINAL"), 
-                        (2, 4, "FIXED"), (5, 6, "FIXED"), (8, 9, "FIXED"), (11, 7, "FIXED")]:
-        if cm == m and abs(cd - d) <= 2: 
-            is_node, n_type = True, f" [{t_name}]"
-
+    # 2. Iterate through tickers and extract metrics
     for tk in ticker_list:
         try:
-            if isinstance(history.index, pd.MultiIndex):
-                if tk not in history.index.levels[0]: 
-                    continue
-                df = history.loc[tk].dropna().copy()
-            else: 
-                df = history.dropna().copy()
-                
-            if df.empty or len(df) < 5: 
-                continue
+            display_name = tk.replace(".AX", "")
 
-            c_col = 'adjclose' if 'adjclose' in df.columns else 'close'
-            df['50_MA'] = df[c_col].rolling(window=min(50, len(df))).mean()
-            df['200_MA'] = df[c_col].rolling(window=min(200, len(df))).mean()
-            
-            p_curr = float(df[c_col].iloc[-1])
-            p_prev = float(df[c_col].iloc[-2]) if len(df) > 1 else p_curr
-            h_52w = float(df['high'].max())
-            d_high = ((h_52w - p_curr) / h_52w) * 100 if h_52w > 0 else 0
-            is_bull = float(df['50_MA'].iloc[-1]) > float(df['200_MA'].iloc[-1]) if len(df) >= 50 else True
+            # --- A. Profit Growth Calculation (Year-over-Year) ---
+            profit_growth = np.nan
+            if isinstance(income_stmt, pd.DataFrame) and not income_stmt.empty:
+                if tk in income_stmt.index:
+                    df_tk = income_stmt.loc[tk].dropna().sort_index()
+                    if len(df_tk) >= 2:
+                        p_current = df_tk['NetIncome'].iloc[-1]
+                        p_previous = df_tk['NetIncome'].iloc[-2]
+                        if p_previous > 0:
+                            profit_growth = ((p_current - p_previous) / p_previous) * 100
 
-            df['ph'] = df['high'].shift(1)
-            df['pl'] = df['low'].shift(1)
-            lr = df.iloc[-1]
-            h, l, ph, pl = lr['high'], lr['low'], lr['ph'], lr['pl']
+            # --- B. Director / Insider Transaction Analysis ---
+            insider_status = "⚪ Neutral / No Recent Filings"
+            buy_count = 0
+            sell_count = 0
+
+            if isinstance(insider, pd.DataFrame) and not insider.empty:
+                if tk in insider.index:
+                    df_ins = insider.loc[tk]
+                    if isinstance(df_ins, pd.Series):
+                        df_ins = df_ins.to_frame().T
+
+                    if 'transactionText' in df_ins.columns:
+                        buy_count = df_ins['transactionText'].str.contains('Purchase|Buy', case=False, na=False).sum()
+                        sell_count = df_ins['transactionText'].str.contains('Sale|Sell', case=False, na=False).sum()
+
+                        if buy_count > sell_count:
+                            insider_status = f"🟢 NET BUY ({buy_count} Buys, {sell_count} Sells)"
+                        elif sell_count > buy_count:
+                            insider_status = f"🔴 NET SELL ({sell_count} Sells, {buy_count} Buys)"
+                        elif buy_count > 0 and buy_count == sell_count:
+                            insider_status = f"🟡 BALANCED ({buy_count} Buys / {sell_count} Sells)"
+
+            # --- C. Target Financial Metrics ---
+            fin_data = financials.get(tk, {}) if isinstance(financials, dict) else {}
+            curr_price = fin_data.get('currentPrice', np.nan)
             
-            if h > ph and l < pl:
-                b_type = "🟠 Outside Bar"
-            elif h <= ph and l >= pl:
-                b_type = "⚪ Inside Bar"
-            elif h > ph:
-                b_type = "🟢 Up Bar"
+            # Use yahooquery earnings growth if YoY statement is unavailable
+            reported_growth = fin_data.get('earningsGrowth', np.nan)
+            if not np.isnan(reported_growth):
+                calc_growth = reported_growth * 100
             else:
-                b_type = "🔴 Down Bar"
+                calc_growth = profit_growth
 
-            # Gann swing vector iteration logic
-            s_dir = 1
-            highs = df['high'].values
-            lows = df['low'].values
-            for i in range(2, len(df)):
-                if highs[i] > highs[i-2] and s_dir == -1: 
-                    s_dir = 1
-                elif lows[i] < lows[i-2] and s_dir == 1: 
-                    s_dir = -1
-                    
-            g_sig = "🟢 GANN UP" if s_dir == 1 else "🚨 GANN DOWN"
-            if is_node: 
-                g_sig += f" ⚡{n_type}"
+            # Conditional formatting badge (> 30% profit growth threshold)
+            if not np.isnan(calc_growth) and calc_growth >= 30.0:
+                growth_badge = f"🟢 {calc_growth:+.2f}% (HIGH GROWTH)"
+            elif not np.isnan(calc_growth):
+                growth_badge = f"⚪ {calc_growth:+.2f}%"
+            else:
+                growth_badge = "N/A"
 
-            t_sum = summary.get(tk, {}) if isinstance(summary, dict) else {}
-            t_fin = financials.get(tk, {}) if isinstance(financials, dict) else {}
-            r_name = tk.replace(".AX", "")
-            l_url = f"https://www.tradingview.com/chart/?symbol=ASX:{r_name}"
-
-            pe_val = t_sum.get('trailingPE', np.nan) if isinstance(t_sum, dict) else np.nan
-            
-            pm_raw = t_fin.get('profitMargins') if isinstance(t_fin, dict) else None
-            pm_val = pm_raw * 100 if pm_raw is not None and isinstance(pm_raw, (int, float)) else np.nan
-            
-            dy_raw = t_sum.get('dividendYield') if isinstance(t_sum, dict) else None
-            dy_val = dy_raw * 100 if dy_raw is not None and isinstance(dy_raw, (int, float)) else np.nan
-
-            compiled_results.append({
-                "Ticker": tk, "Chart Link": l_url, "Name": r_name, "Entry Price": p_prev, "Price": p_curr, 
-                "Dist 52W High %": d_high, "is_bullish": is_bull, "Gann Signal": g_sig, "Current Candle Type": b_type, 
-                "Trailing P/E": pe_val,
-                "Profit Margin %": pm_val,
-                "Div Yield %": dy_val
+            records.append({
+                "Name": display_name,
+                "Ticker": tk,
+                "Current Price": curr_price,
+                "YoY Profit Growth": growth_badge,
+                "Director / Insider Activity": insider_status,
+                "Raw Growth": calc_growth if not np.isnan(calc_growth) else -999.0
             })
-        except Exception: 
+        except Exception:
             continue
-            
-    return compiled_results
 
-# --- WORKSPACES INTERFACE ROUTING ---
-if app_mode == "Automated Quant Fund Simulator":
-    st.header("⚙️ ASX Blue Chip Manual Execution Terminal")
-    st.caption("Review algorithmic stock entry/exit signals below and lock positions into your portfolio manually to track them accurately.")
+    return records
 
-    if "stock_account" not in st.session_state:
-        st.session_state.stock_account = {
-            "cash": 50000.00,
-            "positions": {},
-            "ledger": []
-        }
 
-    st.sidebar.subheader("⚙️ Automated Rule Configurations")
-    max_risk = st.sidebar.slider("Max Trailing Stop-Loss %", 1.0, 15.0, 5.0, step=0.5)
-    trade_size = st.sidebar.number_input("Fixed Size Per Trade ($ AUD Units)", value=10000, step=1000)
-
-    if st.sidebar.button("Wipe Sandbox & Reset Cash"):
-        st.session_state.stock_account = {"cash": 50000.00, "positions": {}, "ledger": []}
-        st.rerun()
-
-    with st.spinner("Processing live equity signals..."): 
-        data_pool = fetch_master_dataset_pool(active_universe)
-
-    if data_pool:
-        current_market = {item["Name"]: item for item in data_pool}
-        
-        st.subheader("📡 Live Strategy Signal Feed")
-        signal_rows = []
-        for name, asset in current_market.items():
-            gann_up = "GANN UP" in asset["Gann Signal"]
-            is_bullish = asset["is_bullish"]
-            
-            if name in st.session_state.stock_account["positions"]:
-                status = "💼 Already in Portfolio"
-            elif is_bullish and gann_up:
-                status = "🟢 BUY SIGNAL GENERATED"
-            else:
-                status = "⚪ Scanning / Neutral"
-                
-            signal_rows.append({
-                "Ticker": name,
-                "Current Price": f"${asset['Price']:.2f}",
-                "Gann Direction": asset["Gann Signal"],
-                "Trend Structure": "🚀 BULLISH" if is_bullish else "⚠️ BEARISH",
-                "System Action Alert": status
-            })
-        st.dataframe(pd.DataFrame(signal_rows), hide_index=True, use_container_width=True)
-
-        st.markdown("---")
-        st.subheader("🕹️ Equity Order Execution Pad")
-        
-        available_buys = [r["Ticker"] for r in signal_rows if "BUY SIGNAL" in r["System Action Alert"]]
-        
-        col_exec1, col_exec2 = st.columns(2)
-        
-        with col_exec1:
-            if available_buys:
-                selected_buy = st.selectbox("Select Active Signal Ticker to Buy", available_buys)
-                if st.button(f"🚀 Execute Market BUY Order: {selected_buy}"):
-                    if st.session_state.stock_account["cash"] >= trade_size:
-                        price_now = current_market[selected_buy]["Price"]
-                        st.session_state.stock_account["cash"] -= trade_size
-                        st.session_state.stock_account["positions"][selected_buy] = {
-                            "entry": price_now,
-                            "size": trade_size,
-                            "stop_loss": price_now * (1 - (max_risk / 100)),
-                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")
-                        }
-                        st.toast(f"Locked {selected_buy} into equity portfolio!")
-                        st.rerun()
-                    else:
-                        st.error("Insufficient Cash Pool.")
-            else:
-                st.info("No active structural buy alerts ready for deployment right now.")
-
-        with col_exec2:
-            active_owned = list(st.session_state.stock_account["positions"].keys())
-            if active_owned:
-                selected_exit = st.selectbox("Select Active Stock to Liquidate", active_owned)
-                if st.button(f"🚨 Execute Market SELL Order: {selected_exit}"):
-                    pos = st.session_state.stock_account["positions"][selected_exit]
-                    price_now = current_market[selected_exit]["Price"]
-                    
-                    return_multiplier = price_now / pos["entry"]
-                    liquidated_cash = pos["size"] * return_multiplier
-                    pnl_pct = ((price_now - pos["entry"]) / pos["entry"]) * 100
-                    pnl_cash = (pos["size"] / pos["entry"]) * (price_now - pos["entry"])
-                    
-                    st.session_state.stock_account["ledger"].append({
-                        "Asset": selected_exit, "Entry Time": pos["timestamp"], "Exit Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        "Entry Price": f"${pos['entry']:.2f}", "Exit Price": f"${price_now:.2f}", "Reason": "🎯 MANUAL TARGET EXIT",
-                        "Return %": f"{pnl_pct:+.2f}%", "Final P&L ($)": f"${pnl_cash:+.2f}"
-                    })
-                    st.session_state.stock_account["cash"] += liquidated_cash
-                    del st.session_state.stock_account["positions"][selected_exit]
-                    st.toast(f"Successfully Sold {selected_exit}!")
-                    st.rerun()
-            else:
-                st.info("No active stock positions to close manually.")
-
-        # Safe key iteration to prevent mutating state while looping
-        positions_to_check = list(st.session_state.stock_account["positions"].keys())
-        triggered_stops = False
-        
-        for name in positions_to_check:
-            if name not in current_market:
-                continue
-            pos = st.session_state.stock_account["positions"][name]
-            price = current_market[name]["Price"]
-            
-            if price <= pos["stop_loss"]:
-                return_multiplier = price / pos["entry"]
-                liquidated_cash = pos["size"] * return_multiplier
-                pnl_pct = ((price - pos["entry"]) / pos["entry"]) * 100
-                pnl_cash = (pos["size"] / pos["entry"]) * (price - pos["entry"])
-                
-                st.session_state.stock_account["ledger"].append({
-                    "Asset": name, "Entry Time": pos["timestamp"], "Exit Time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "Entry Price": f"${pos['entry']:.2f}", "Exit Price": f"${price:.2f}", "Reason": "🛑 STOP LOSS TRIGGERED",
-                    "Return %": f"{pnl_pct:+.2f}%", "Final P&L ($)": f"${pnl_cash:+.2f}"
+@st.cache_data(ttl=1800)
+def fetch_technical_pool(ticker_list):
+    """Fetches price history and simple moving averages for technical screeners."""
+    records = []
+    for tk in ticker_list:
+        try:
+            df = yf.download(tk, period="6m", progress=False)
+            if not df.empty:
+                close = df['Close'].iloc[-1]
+                sma_50 = df['Close'].rolling(50).mean().iloc[-1]
+                trend = "🟢 Uptrend" if close > sma_50 else "🔴 Downtrend"
+                records.append({
+                    "Name": tk.replace(".AX", ""),
+                    "Ticker": tk,
+                    "Price": float(close),
+                    "Trend (50 SMA)": trend
                 })
-                st.session_state.stock_account["cash"] += liquidated_cash
-                del st.session_state.stock_account["positions"][name]
-                st.toast(f"CRITICAL RISK ACTION: {name} hit hard Stop Loss limit.")
-                triggered_stops = True
+        except Exception:
+            continue
+    return pd.DataFrame(records)
 
-        if triggered_stops:
-            st.rerun()
+# ==============================================================================
+# 5. WORKSPACE ROUTING & INTERFACE
+# ==============================================================================
 
-        open_positions = st.session_state.stock_account["positions"]
-        current_floating_value = 0.0
-        active_rows = []
-        
-        for name, pos in open_positions.items():
-            curr_price = current_market.get(name, {}).get("Price", pos["entry"])
-            pnl_pct = ((curr_price - pos["entry"]) / pos["entry"]) * 100
-            pnl_cash = (pos["size"] / pos["entry"]) * (curr_price - pos["entry"])
-            current_floating_value += (pos["size"] + pnl_cash)
-            
-            active_rows.append({
-                "Asset": name, "Execution Time": pos["timestamp"], "Entry Price": f"${pos['entry']:.2f}",
-                "Current Price": f"${curr_price:.2f}", "Stop Level": f"${pos['stop_loss']:.2f}",
-                "Return Status": f"{pnl_pct:+.2f}%", "Floating P&L ($)": f"${pnl_cash:+.2f}"
-            })
+# ------------------------------------------------------------------------------
+# WORKSPACE 1: FUNDAMENTAL & INSIDER SCREENER (NEW)
+# ------------------------------------------------------------------------------
+if app_mode == "Fundamental & Insider Screener":
+    st.title("🏛️ Fundamental & Insider Trading Screener")
+    st.markdown(
+        "Screens assets based on **Year-over-Year Profit Growth** (highlighting $\ge 30\%$) "
+        "and tracks **Director / Promoter Share Transactions**."
+    )
 
-        total_equity = st.session_state.stock_account["cash"] + current_floating_value
-        total_pnl = total_equity - 50000.00
+    with st.spinner("Retrieving Financial Statements & Director Filings from SEC / ASX..."):
+        fund_records = fetch_fundamental_insider_data(active_universe)
 
-        st.markdown("---")
-        st.subheader("📋 Core Live Open Portfolio Account Status")
+    if fund_records:
+        df_fund = pd.DataFrame(fund_records)
+
+        # Interactive controls inside the workspace
+        col_ctrl1, col_ctrl2 = st.columns([2, 1])
+        with col_ctrl1:
+            min_growth_threshold = st.slider(
+                "Filter minimum Profit Growth % (Target threshold: ≥ 30%)",
+                min_value=-50,
+                max_value=100,
+                value=30,
+                step=5
+            )
+        with col_ctrl2:
+            insider_filter = st.selectbox(
+                "Filter Director Activity",
+                ["All Activity", "🟢 Net Buying Only", "🔴 Net Selling Only"]
+            )
+
+        # Apply user filters
+        filtered_df = df_fund[df_fund["Raw Growth"] >= min_growth_threshold].copy()
+
+        if insider_filter == "🟢 Net Buying Only":
+            filtered_df = filtered_df[filtered_df["Director / Insider Activity"].str.contains("NET BUY")]
+        elif insider_filter == "🔴 Net Selling Only":
+            filtered_df = filtered_df[filtered_df["Director / Insider Activity"].str.contains("NET SELL")]
+
+        filtered_df = filtered_df.sort_values(by="Raw Growth", ascending=False)
+
+        # Render KPI metrics
+        st.divider()
         m1, m2, m3 = st.columns(3)
-        m1.metric("Available Balance Cash", f"${st.session_state.stock_account['cash']:,.2f} AUD")
-        m2.metric("Total Net Portfolio Equity", f"${total_equity:,.2f} AUD")
-        m3.metric("Net Total Realized Returns", f"${total_pnl:,.2f} AUD", delta=f"{total_pnl:+.2f}")
+        m1.metric("Total Assets Screened", len(df_fund))
+        m2.metric("Assets Meeting Target (≥ 30% Growth)", len(df_fund[df_fund["Raw Growth"] >= 30]))
+        m3.metric("Director Net-Buying Companies", len(df_fund[df_fund["Director / Insider Activity"].str.contains("NET BUY")]))
 
-        if active_rows:
-            st.dataframe(pd.DataFrame(active_rows), hide_index=True, use_container_width=True)
+        # Render Streamlit Data Table
+        st.subheader(f"Screened Assets (Profit Growth ≥ {min_growth_threshold}%)")
+        
+        if not filtered_df.empty:
+            st.dataframe(
+                filtered_df[['Name', 'Ticker', 'Current Price', 'YoY Profit Growth', 'Director / Insider Activity']],
+                column_config={
+                    "Current Price": st.column_config.NumberColumn("Current Price", format="$%.2f"),
+                    "YoY Profit Growth": st.column_config.TextColumn("YoY Profit Growth"),
+                    "Director / Insider Activity": st.column_config.TextColumn("Director / Insider Activity")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
         else:
-            st.info("Your portfolio is currently empty. Use the order pad above to execute active signals.")
+            st.info("No stocks found matching the specified profit growth and insider trading criteria.")
 
-        st.markdown("---")
-        st.subheader("📚 Historical Closed Ledger (Real-Time Performance Track)")
-        if st.session_state.stock_account["ledger"]:
-            ledger_df = pd.DataFrame(st.session_state.stock_account["ledger"])
-            st.dataframe(ledger_df.iloc[::-1], hide_index=True, use_container_width=True)
-        else:
-            st.info("No closed trades archived yet for this session.")
+# ------------------------------------------------------------------------------
+# WORKSPACE 2: AUTOMATED QUANT FUND SIMULATOR
+# ------------------------------------------------------------------------------
+elif app_mode == "Automated Quant Fund Simulator":
+    st.title("🤖 Automated Quant Fund Simulator")
+    st.write("Simulate automated portfolio rebalancing and algorithmic weighting strategies.")
+    df_tech = fetch_technical_pool(active_universe)
+    if not df_tech.empty:
+        st.dataframe(df_tech, use_container_width=True, hide_index=True)
 
+# ------------------------------------------------------------------------------
+# WORKSPACE 3: TREND MOMENTUM SCREENER
+# ------------------------------------------------------------------------------
 elif app_mode == "Trend Momentum Screener":
-    st.header(f"🟢 Elite Momentum Screener ({index_tier})")
-    with st.spinner("Processing Index Matrix..."): 
-        data_pool = fetch_master_dataset_pool(active_universe)
-    if data_pool:
-        df_pool = pd.DataFrame(data_pool)
-        filtered = df_pool[df_pool["is_bullish"] == True].sort_values(by="Dist 52W High %")
-        st.data_editor(
-            filtered[['Name', 'Chart Link', 'Price', 'Gann Signal', 'Current Candle Type']], 
-            column_config={
-                "Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), 
-                "Price": st.column_config.NumberColumn(format="$%.2f")
-            }, 
-            disabled=True, hide_index=True, use_container_width=True
-        )
+    st.title("📊 Trend Momentum Screener")
+    st.write("Identifies assets displaying strong technical momentum and price structure.")
+    df_tech = fetch_technical_pool(active_universe)
+    if not df_tech.empty:
+        st.dataframe(df_tech, use_container_width=True, hide_index=True)
 
-elif app_mode == "Fundamental Value Searcher":
-    st.header(f"💎 Fundamental Balance Sheet Matrix ({index_tier})")
-    with st.spinner("Extracting Parameters..."): 
-        data_pool = fetch_master_dataset_pool(active_universe)
-    if data_pool:
-        st.data_editor(
-            pd.DataFrame(data_pool)[['Name', 'Chart Link', 'Price', 'Trailing P/E', 'Profit Margin %', 'Div Yield %']], 
-            column_config={
-                "Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), 
-                "Price": st.column_config.NumberColumn(format="$%.2f"), 
-                "Profit Margin %": st.column_config.NumberColumn(format="%.2f%%"), 
-                "Div Yield %": st.column_config.NumberColumn(format="%.2f%%")
-            }, 
-            disabled=True, hide_index=True, use_container_width=True
-        )
-
+# ------------------------------------------------------------------------------
+# WORKSPACE 4: WD GANN MECHANICAL SCREENER
+# ------------------------------------------------------------------------------
 elif app_mode == "WD Gann Mechanical Screener":
-    st.header(f"🦅 Advanced WD Gann Structural Matrix ({index_tier})")
-    with st.spinner("Calculating Pivots..."): 
-        data_pool = fetch_master_dataset_pool(active_universe)
-    if data_pool:
-        st.data_editor(
-            pd.DataFrame(data_pool)[['Name', 'Chart Link', 'Gann Signal', 'Current Candle Type', 'Price']], 
-            column_config={
-                "Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), 
-                "Price": st.column_config.NumberColumn(format="$%.2f")
-            }, 
-            disabled=True, hide_index=True, use_container_width=True
-        )
+    st.title("📐 WD Gann Mechanical Screener")
+    st.write("Screens swing highs, swing lows, and trend reversals using mechanical Gann rules.")
+    df_tech = fetch_technical_pool(active_universe)
+    if not df_tech.empty:
+        st.dataframe(df_tech, use_container_width=True, hide_index=True)
 
+# ------------------------------------------------------------------------------
+# WORKSPACE 5: INTERACTIVE CHARTING WORKSPACE
+# ------------------------------------------------------------------------------
 elif app_mode == "Interactive Charting Workspace":
-    st.header(f"📈 Core Deep Research Terminal: {clean_symbol}")
-    with st.spinner("Pulling real-time parameters..."): 
-        single_p = fetch_master_dataset_pool([target_ticker])
-    if single_p:
-        sd = single_p[0]
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Latest Close", f"${sd['Price']:.2f}")
-        c2.metric("Gann Swing Direction", sd['Gann Signal'])
-        c3.metric("Candle Structural State", sd['Current Candle Type'])
-        c4.metric("Trend State (50/200MA)", "🚀 BULL" if sd['is_bullish'] else "⚠️ BEAR")
-
-    components.html(f"""<div style="height:550px; width:100%;"><div id="tv_chart" style="height:100%; width:100%;"></div>
-      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-      <script type="text/javascript">new TradingView.widget({{"autosize": true, "symbol": "ASX:{clean_symbol}", "interval": "D", "timezone": "Australia/Sydney", "theme": "light", "style": "1", "locale": "en", "container_id": "tv_chart"}});</script>
-    </div>""", height=570)
+    st.title("📈 Interactive Charting Workspace")
+    selected_ticker = st.selectbox("Select Stock to Chart", active_universe)
+    
+    if selected_ticker:
+        data = yf.download(selected_ticker, period="1y", progress=False)
+        if not data.empty:
+            st.line_chart(data['Close'])
