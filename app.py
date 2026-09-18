@@ -169,113 +169,56 @@ def fetch_master_dataset_pool(ticker_list):
             
     return compiled_results
 
-
-@st.cache_data(ttl=1800)
-def fetch_fundamental_insider_data(ticker_list):
-    records = []
-    if not ticker_list:
-        return records
-
-    try:
-        t = Ticker(ticker_list)
-        financials = getattr(t, 'financial_data', {})
-        summary = getattr(t, 'summary_detail', {})
-        key_stats = getattr(t, 'key_stats', {})
-    except Exception:
-        financials, summary, key_stats = {}, {}, {}
-
-    for tk in ticker_list:
-        try:
-            display_name = tk.replace(".AX", "")
-            fin_data = financials.get(tk, {}) if isinstance(financials, dict) else {}
-            sum_data = summary.get(tk, {}) if isinstance(summary, dict) else {}
-            stat_data = key_stats.get(tk, {}) if isinstance(key_stats, dict) else {}
-
-            curr_price = fin_data.get('currentPrice', sum_data.get('previousClose', np.nan))
-            
-            # 1. Multi-tier Profit & Growth Metric Extraction
-            calc_growth = np.nan
-            rev_growth = fin_data.get('revenueGrowth')
-            e_growth = fin_data.get('earningsGrowth')
-            p_margin = fin_data.get('profitMargins')
-
-            if e_growth is not None and not np.isnan(e_growth):
-                calc_growth = e_growth * 100
-            elif rev_growth is not None and not np.isnan(rev_growth):
-                calc_growth = rev_growth * 100
-            elif p_margin is not None and not np.isnan(p_margin):
-                calc_growth = p_margin * 100
-
-            # 2. ASX Director / Institutional Insider Signal
-            inst_hold = stat_data.get('heldPercentInstitutions', 0)
-            if inst_hold is None or np.isnan(inst_hold):
-                inst_hold = 0.0
-            
-            if inst_hold >= 0.40:
-                insider_status = f"🟢 HEAVY INSTITUTIONAL BUY ({inst_hold*100:.1f}% Held)"
-            elif inst_hold >= 0.15:
-                insider_status = f"🟡 MODERATE HOLDING ({inst_hold*100:.1f}% Held)"
-            else:
-                insider_status = "⚪ STANDARD RETAIL / NO FILINGS"
-
-            # Badge formatting
-            if not np.isnan(calc_growth) and calc_growth >= 30.0:
-                growth_badge = f"🟢 {calc_growth:+.2f}% (HIGH)"
-            elif not np.isnan(calc_growth):
-                growth_badge = f"⚪ {calc_growth:+.2f}%"
-            else:
-                growth_badge = "N/A"
-
-            records.append({
-                "Name": display_name,
-                "Ticker": tk,
-                "Current Price": curr_price,
-                "YoY Growth / Profit Margin": growth_badge,
-                "Director / Institution Signals": insider_status,
-                "Raw Growth": calc_growth if not np.isnan(calc_growth) else -999.0
-            })
-        except Exception:
-            continue
-
-    return records
-
 # ==============================================================================
 # 5. WORKSPACES INTERFACE ROUTING
 # ==============================================================================
 
 # --- WORKSPACE 1: FUNDAMENTAL & INSIDER SCREENER ---
 if app_mode == "Fundamental & Insider Screener":
-    st.header(f"🏛️ Fundamental & Insider Trading Screener ({index_tier})")
-    st.caption("Screens assets for growth/margin thresholds and institutional/director backing.")
+    st.header(f"🏛️ Custom Fundamental Screener ({index_tier})")
+    st.caption("Adjust the sliders below to manually screen stocks by profit margins and dividend yield.")
 
-    with st.spinner("Analyzing Financials & Stakeholder Holdings..."):
-        fund_data = fetch_fundamental_insider_data(active_universe)
+    with st.spinner("Extracting Market Fundamentals..."):
+        data_pool = fetch_master_dataset_pool(active_universe)
 
-    if fund_data:
-        df_fund = pd.DataFrame(fund_data)
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            min_growth = st.slider("Filter by Minimum Growth / Margin %", -50, 100, -50)
-        with col2:
-            insider_filter = st.selectbox("Filter Institutional / Director Backing", ["All Assets", "🟢 Heavy Backing Only", "🟡 Moderate Backing Only"])
+    if data_pool:
+        df_fund = pd.DataFrame(data_pool)
+        
+        # Interactive Manual Controls
+        c1, c2 = st.columns(2)
+        with c1:
+            min_margin = st.slider("Min Profit Margin %", min_value=-50.0, max_value=50.0, value=10.0, step=1.0)
+        with c2:
+            min_div = st.slider("Min Dividend Yield %", min_value=0.0, max_value=15.0, value=0.0, step=0.5)
 
-        filtered_df = df_fund[df_fund["Raw Growth"] >= min_growth].copy()
-        if insider_filter == "🟢 Heavy Backing Only":
-            filtered_df = filtered_df[filtered_df["Director / Institution Signals"].str.contains("HEAVY")]
-        elif insider_filter == "🟡 Moderate Backing Only":
-            filtered_df = filtered_df[filtered_df["Director / Institution Signals"].str.contains("MODERATE")]
+        # Fill missing values for clean filtering
+        df_fund["Profit Margin %"] = df_fund["Profit Margin %"].fillna(-999.0)
+        df_fund["Div Yield %"] = df_fund["Div Yield %"].fillna(0.0)
 
-        filtered_df = filtered_df.sort_values(by="Raw Growth", ascending=False)
+        # Apply User Filters
+        filtered_df = df_fund[
+            (df_fund["Profit Margin %"] >= min_margin) & 
+            (df_fund["Div Yield %"] >= min_div)
+        ].copy()
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total Assets Screened", len(df_fund))
-        m2.metric("High Margin / Growth (≥ 30%)", len(df_fund[df_fund["Raw Growth"] >= 30]))
-        m3.metric("Strong Stakeholder Backing", len(df_fund[df_fund["Director / Institution Signals"].str.contains("HEAVY")]))
+        # Display Metrics
+        st.divider()
+        m1, m2 = st.columns(2)
+        m1.metric("Total Stocks Screened", len(df_fund))
+        m2.metric("Matching Strategy Criteria", len(filtered_df))
 
+        # Render Data Table
         st.dataframe(
-            filtered_df[['Name', 'Ticker', 'Current Price', 'YoY Growth / Profit Margin', 'Director / Institution Signals']],
-            column_config={"Current Price": st.column_config.NumberColumn(format="$%.2f")},
-            hide_index=True, use_container_width=True
+            filtered_df[['Name', 'Chart Link', 'Price', 'Profit Margin %', 'Div Yield %', 'Trailing P/E']],
+            column_config={
+                "Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"),
+                "Price": st.column_config.NumberColumn(format="$%.2f"),
+                "Profit Margin %": st.column_config.NumberColumn(format="%.2f%%"),
+                "Div Yield %": st.column_config.NumberColumn(format="%.2f%%"),
+                "Trailing P/E": st.column_config.NumberColumn(format="%.2f")
+            },
+            hide_index=True,
+            use_container_width=True
         )
 
 # --- WORKSPACE 2: AUTOMATED QUANT FUND SIMULATOR ---
