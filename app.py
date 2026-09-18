@@ -176,57 +176,51 @@ def fetch_fundamental_insider_data(ticker_list):
     if not ticker_list:
         return records
 
-    t = Ticker(ticker_list)
-    
     try:
-        inc_stmt = t.income_statement(frequency='a')
+        t = Ticker(ticker_list)
         financials = getattr(t, 'financial_data', {})
-        insider = getattr(t, 'insider_transactions', None)
+        summary = getattr(t, 'summary_detail', {})
+        key_stats = getattr(t, 'key_stats', {})
     except Exception:
-        inc_stmt, financials, insider = None, {}, None
+        financials, summary, key_stats = {}, {}, {}
 
     for tk in ticker_list:
         try:
             display_name = tk.replace(".AX", "")
             fin_data = financials.get(tk, {}) if isinstance(financials, dict) else {}
-            curr_price = fin_data.get('currentPrice', np.nan)
+            sum_data = summary.get(tk, {}) if isinstance(summary, dict) else {}
+            stat_data = key_stats.get(tk, {}) if isinstance(key_stats, dict) else {}
+
+            curr_price = fin_data.get('currentPrice', sum_data.get('previousClose', np.nan))
             
+            # 1. Multi-tier Profit & Growth Metric Extraction
             calc_growth = np.nan
+            rev_growth = fin_data.get('revenueGrowth')
+            e_growth = fin_data.get('earningsGrowth')
+            p_margin = fin_data.get('profitMargins')
 
-            if isinstance(inc_stmt, pd.DataFrame) and not inc_stmt.empty:
-                if tk in inc_stmt.index:
-                    df_tk = inc_stmt.loc[tk].dropna(subset=['NetIncome']).sort_values(by='asOfDate')
-                    if len(df_tk) >= 2:
-                        recent_income = df_tk['NetIncome'].iloc[-1]
-                        prev_income = df_tk['NetIncome'].iloc[-2]
-                        if prev_income > 0:
-                            calc_growth = ((recent_income - prev_income) / prev_income) * 100
+            if e_growth is not None and not np.isnan(e_growth):
+                calc_growth = e_growth * 100
+            elif rev_growth is not None and not np.isnan(rev_growth):
+                calc_growth = rev_growth * 100
+            elif p_margin is not None and not np.isnan(p_margin):
+                calc_growth = p_margin * 100
 
-            if np.isnan(calc_growth):
-                e_growth = fin_data.get('earningsGrowth', np.nan)
-                if e_growth is not None and not np.isnan(e_growth):
-                    calc_growth = e_growth * 100
+            # 2. ASX Director / Institutional Insider Signal
+            inst_hold = stat_data.get('heldPercentInstitutions', 0)
+            if inst_hold is None or np.isnan(inst_hold):
+                inst_hold = 0.0
+            
+            if inst_hold >= 0.40:
+                insider_status = f"🟢 HEAVY INSTITUTIONAL BUY ({inst_hold*100:.1f}% Held)"
+            elif inst_hold >= 0.15:
+                insider_status = f"🟡 MODERATE HOLDING ({inst_hold*100:.1f}% Held)"
+            else:
+                insider_status = "⚪ STANDARD RETAIL / NO FILINGS"
 
-            insider_status = "⚪ No SEC/ASX Filings Detected"
-            if isinstance(insider, pd.DataFrame) and not insider.empty:
-                if tk in insider.index:
-                    df_ins = insider.loc[tk]
-                    if isinstance(df_ins, pd.Series):
-                        df_ins = df_ins.to_frame().T
-                    
-                    if 'transactionText' in df_ins.columns:
-                        buys = df_ins['transactionText'].str.contains('Purchase|Buy', case=False, na=False).sum()
-                        sells = df_ins['transactionText'].str.contains('Sale|Sell', case=False, na=False).sum()
-                        
-                        if buys > sells:
-                            insider_status = f"🟢 NET BUY ({buys} Buys)"
-                        elif sells > buys:
-                            insider_status = f"🔴 NET SELL ({sells} Sells)"
-                        elif buys > 0:
-                            insider_status = f"🟡 BALANCED ({buys} Trades)"
-
+            # Badge formatting
             if not np.isnan(calc_growth) and calc_growth >= 30.0:
-                growth_badge = f"🟢 {calc_growth:+.2f}% (HIGH GROWTH)"
+                growth_badge = f"🟢 {calc_growth:+.2f}% (HIGH)"
             elif not np.isnan(calc_growth):
                 growth_badge = f"⚪ {calc_growth:+.2f}%"
             else:
@@ -236,8 +230,8 @@ def fetch_fundamental_insider_data(ticker_list):
                 "Name": display_name,
                 "Ticker": tk,
                 "Current Price": curr_price,
-                "YoY Profit Growth": growth_badge,
-                "Director / Insider Activity": insider_status,
+                "YoY Growth / Profit Margin": growth_badge,
+                "Director / Institution Signals": insider_status,
                 "Raw Growth": calc_growth if not np.isnan(calc_growth) else -999.0
             })
         except Exception:
@@ -252,34 +246,34 @@ def fetch_fundamental_insider_data(ticker_list):
 # --- WORKSPACE 1: FUNDAMENTAL & INSIDER SCREENER ---
 if app_mode == "Fundamental & Insider Screener":
     st.header(f"🏛️ Fundamental & Insider Trading Screener ({index_tier})")
-    st.caption("Screens assets for profit growth (highlighting ≥ 30%) and tracks director/promoter share purchases.")
+    st.caption("Screens assets for growth/margin thresholds and institutional/director backing.")
 
-    with st.spinner("Analyzing Financial Statements & Director Filings..."):
+    with st.spinner("Analyzing Financials & Stakeholder Holdings..."):
         fund_data = fetch_fundamental_insider_data(active_universe)
 
     if fund_data:
         df_fund = pd.DataFrame(fund_data)
         col1, col2 = st.columns([2, 1])
         with col1:
-            min_growth = st.slider("Filter by Minimum YoY Profit Growth %", -50, 100, -50)
+            min_growth = st.slider("Filter by Minimum Growth / Margin %", -50, 100, -50)
         with col2:
-            insider_filter = st.selectbox("Filter Director Activity", ["All Activity", "🟢 Net Buying Only", "🔴 Net Selling Only"])
+            insider_filter = st.selectbox("Filter Institutional / Director Backing", ["All Assets", "🟢 Heavy Backing Only", "🟡 Moderate Backing Only"])
 
         filtered_df = df_fund[df_fund["Raw Growth"] >= min_growth].copy()
-        if insider_filter == "🟢 Net Buying Only":
-            filtered_df = filtered_df[filtered_df["Director / Insider Activity"].str.contains("NET BUY")]
-        elif insider_filter == "🔴 Net Selling Only":
-            filtered_df = filtered_df[filtered_df["Director / Insider Activity"].str.contains("NET SELL")]
+        if insider_filter == "🟢 Heavy Backing Only":
+            filtered_df = filtered_df[filtered_df["Director / Institution Signals"].str.contains("HEAVY")]
+        elif insider_filter == "🟡 Moderate Backing Only":
+            filtered_df = filtered_df[filtered_df["Director / Institution Signals"].str.contains("MODERATE")]
 
         filtered_df = filtered_df.sort_values(by="Raw Growth", ascending=False)
 
         m1, m2, m3 = st.columns(3)
         m1.metric("Total Assets Screened", len(df_fund))
-        m2.metric("High Growth (≥ 30% Growth)", len(df_fund[df_fund["Raw Growth"] >= 30]))
-        m3.metric("Director Net Buying Companies", len(df_fund[df_fund["Director / Insider Activity"].str.contains("NET BUY")]))
+        m2.metric("High Margin / Growth (≥ 30%)", len(df_fund[df_fund["Raw Growth"] >= 30]))
+        m3.metric("Strong Stakeholder Backing", len(df_fund[df_fund["Director / Institution Signals"].str.contains("HEAVY")]))
 
         st.dataframe(
-            filtered_df[['Name', 'Ticker', 'Current Price', 'YoY Profit Growth', 'Director / Insider Activity']],
+            filtered_df[['Name', 'Ticker', 'Current Price', 'YoY Growth / Profit Margin', 'Director / Institution Signals']],
             column_config={"Current Price": st.column_config.NumberColumn(format="$%.2f")},
             hide_index=True, use_container_width=True
         )
