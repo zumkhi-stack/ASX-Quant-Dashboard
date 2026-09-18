@@ -53,12 +53,18 @@ index_tier = st.sidebar.selectbox("Choose Core Index Target", ["ASX 50", "ASX 10
 if index_tier == "ASX 50":
     active_universe = ASX_50
 elif index_tier == "ASX 100":
-    active_universe = list(set(ASX_50 + ASX_100_ADDITIONS))
+    active_universe = sorted(list(set(ASX_50 + ASX_100_ADDITIONS)))
 else:
-    active_universe = list(set(ASX_50 + ASX_100_ADDITIONS + ASX_200_ADDITIONS))
+    active_universe = sorted(list(set(ASX_50 + ASX_100_ADDITIONS + ASX_200_ADDITIONS)))
 
 raw_search = st.sidebar.text_input("Stock Search (e.g. PLS, REA, BHP)", "").strip().upper()
-app_mode = st.sidebar.selectbox("App Workspace", ["Automated Quant Fund Simulator", "Trend Momentum Screener", "Fundamental Value Searcher", "WD Gann Mechanical Screener", "Interactive Charting Workspace"])
+app_mode = st.sidebar.selectbox("App Workspace", [
+    "Automated Quant Fund Simulator", 
+    "Trend Momentum Screener", 
+    "Fundamental Value Searcher", 
+    "WD Gann Mechanical Screener", 
+    "Interactive Charting Workspace"
+])
 
 if raw_search:
     target_ticker = raw_search if raw_search.endswith(".AX") else f"{raw_search}.AX"
@@ -70,61 +76,99 @@ else:
 @st.cache_data(ttl=300)
 def fetch_master_dataset_pool(ticker_list):
     compiled_results = []
-    if not ticker_list: return []
+    if not ticker_list: 
+        return []
     try:
         t = Ticker(ticker_list)
         history = t.history(period="1y")
-        if history is None or (isinstance(history, pd.DataFrame) and history.empty): return []
-        summary, financials = t.summary_detail, t.financial_data
-    except: return []
+        if history is None or (isinstance(history, pd.DataFrame) and history.empty): 
+            return []
+        
+        summary = getattr(t, 'summary_detail', {})
+        financials = getattr(t, 'financial_data', {})
+    except Exception: 
+        return []
 
     cm, cd = datetime.now().month, datetime.now().day
     is_node, n_type = False, ""
-    for m, d, t_name in [(3,21,"CARDINAL"),(6,22,"CARDINAL"),(9,23,"CARDINAL"),(12,22,"CARDINAL"),(2,4,"FIXED"),(5,6,"FIXED"),(8,9,"FIXED"),(11,7,"FIXED")]:
-        if cm == m and abs(cd - d) <= 2: is_node, n_type = True, f" [{t_name}]"
+    for m, d, t_name in [(3, 21, "CARDINAL"), (6, 22, "CARDINAL"), (9, 23, "CARDINAL"), (12, 22, "CARDINAL"), 
+                        (2, 4, "FIXED"), (5, 6, "FIXED"), (8, 9, "FIXED"), (11, 7, "FIXED")]:
+        if cm == m and abs(cd - d) <= 2: 
+            is_node, n_type = True, f" [{t_name}]"
 
     for tk in ticker_list:
         try:
             if isinstance(history.index, pd.MultiIndex):
-                if tk not in history.index.levels[0]: continue
+                if tk not in history.index.levels[0]: 
+                    continue
                 df = history.loc[tk].dropna().copy()
-            else: df = history.dropna().copy()
-            if df.empty or len(df) < 5: continue
+            else: 
+                df = history.dropna().copy()
+                
+            if df.empty or len(df) < 5: 
+                continue
 
             c_col = 'adjclose' if 'adjclose' in df.columns else 'close'
             df['50_MA'] = df[c_col].rolling(window=min(50, len(df))).mean()
             df['200_MA'] = df[c_col].rolling(window=min(200, len(df))).mean()
             
-            p_curr, p_prev = float(df[c_col].iloc[-1]), float(df[c_col].iloc[-2]) if len(df) > 1 else float(df[c_col].iloc[-1])
+            p_curr = float(df[c_col].iloc[-1])
+            p_prev = float(df[c_col].iloc[-2]) if len(df) > 1 else p_curr
             h_52w = float(df['high'].max())
             d_high = ((h_52w - p_curr) / h_52w) * 100 if h_52w > 0 else 0
             is_bull = float(df['50_MA'].iloc[-1]) > float(df['200_MA'].iloc[-1]) if len(df) >= 50 else True
 
-            df['ph'], df['pl'] = df['high'].shift(1), df['low'].shift(1)
+            df['ph'] = df['high'].shift(1)
+            df['pl'] = df['low'].shift(1)
             lr = df.iloc[-1]
             h, l, ph, pl = lr['high'], lr['low'], lr['ph'], lr['pl']
-            b_type = "🟠 Outside Bar" if (h > ph and l < pl) else ("⚪ Inside Bar" if (h <= ph and l >= pl) else ("🟢 Up Bar" if h > ph else "🔴 Down Bar"))
+            
+            if h > ph and l < pl:
+                b_type = "🟠 Outside Bar"
+            elif h <= ph and l >= pl:
+                b_type = "⚪ Inside Bar"
+            elif h > ph:
+                b_type = "🟢 Up Bar"
+            else:
+                b_type = "🔴 Down Bar"
 
+            # Gann swing vector iteration logic
             s_dir = 1
+            highs = df['high'].values
+            lows = df['low'].values
             for i in range(2, len(df)):
-                if df['high'].iloc[i] > df['high'].iloc[i-2] and s_dir == -1: s_dir = 1
-                elif df['low'].iloc[i] < df['low'].iloc[i-2] and s_dir == 1: s_dir = -1
-            g_sig = f"🟢 GANN UP" if s_dir == 1 else "🚨 GANN DOWN"
-            if is_node: g_sig += f" ⚡{n_type}"
+                if highs[i] > highs[i-2] and s_dir == -1: 
+                    s_dir = 1
+                elif lows[i] < lows[i-2] and s_dir == 1: 
+                    s_dir = -1
+                    
+            g_sig = "🟢 GANN UP" if s_dir == 1 else "🚨 GANN DOWN"
+            if is_node: 
+                g_sig += f" ⚡{n_type}"
 
             t_sum = summary.get(tk, {}) if isinstance(summary, dict) else {}
             t_fin = financials.get(tk, {}) if isinstance(financials, dict) else {}
             r_name = tk.replace(".AX", "")
             l_url = f"https://www.tradingview.com/chart/?symbol=ASX:{r_name}"
 
+            pe_val = t_sum.get('trailingPE', np.nan) if isinstance(t_sum, dict) else np.nan
+            
+            pm_raw = t_fin.get('profitMargins') if isinstance(t_fin, dict) else None
+            pm_val = pm_raw * 100 if pm_raw is not None and isinstance(pm_raw, (int, float)) else np.nan
+            
+            dy_raw = t_sum.get('dividendYield') if isinstance(t_sum, dict) else None
+            dy_val = dy_raw * 100 if dy_raw is not None and isinstance(dy_raw, (int, float)) else np.nan
+
             compiled_results.append({
                 "Ticker": tk, "Chart Link": l_url, "Name": r_name, "Entry Price": p_prev, "Price": p_curr, 
                 "Dist 52W High %": d_high, "is_bullish": is_bull, "Gann Signal": g_sig, "Current Candle Type": b_type, 
-                "Trailing P/E": t_sum.get('trailingPE', np.nan),
-                "Profit Margin %": t_fin.get('profitMargins', np.nan) * 100 if t_fin.get('profitMargins') else np.nan,
-                "Div Yield %": t_sum.get('dividendYield', np.nan) * 100 if t_sum.get('dividendYield') else np.nan
+                "Trailing P/E": pe_val,
+                "Profit Margin %": pm_val,
+                "Div Yield %": dy_val
             })
-        except: continue
+        except Exception: 
+            continue
+            
     return compiled_results
 
 # --- WORKSPACES INTERFACE ROUTING ---
@@ -132,39 +176,33 @@ if app_mode == "Automated Quant Fund Simulator":
     st.header("⚙️ ASX Blue Chip Manual Execution Terminal")
     st.caption("Review algorithmic stock entry/exit signals below and lock positions into your portfolio manually to track them accurately.")
 
-    # 1. Initialize Virtual Core Account Balance & Ledger History in Memory
     if "stock_account" not in st.session_state:
         st.session_state.stock_account = {
-            "cash": 50000.00,        # Initial Sandbox Balance ($ AUD)
-            "positions": {},         # Stores permanently locked open equities
-            "ledger": []             # Stores closed trades history list
+            "cash": 50000.00,
+            "positions": {},
+            "ledger": []
         }
 
-    # 2. Strategy Tuning Controls
     st.sidebar.subheader("⚙️ Automated Rule Configurations")
     max_risk = st.sidebar.slider("Max Trailing Stop-Loss %", 1.0, 15.0, 5.0, step=0.5)
     trade_size = st.sidebar.number_input("Fixed Size Per Trade ($ AUD Units)", value=10000, step=1000)
 
-    # Reset Portfolio Button
     if st.sidebar.button("Wipe Sandbox & Reset Cash"):
         st.session_state.stock_account = {"cash": 50000.00, "positions": {}, "ledger": []}
         st.rerun()
 
-    # 3. Pull Current Live Engine Signal Structures
     with st.spinner("Processing live equity signals..."): 
         data_pool = fetch_master_dataset_pool(active_universe)
 
     if data_pool:
         current_market = {item["Name"]: item for item in data_pool}
         
-        # --- STRATEGY SIGNAL FEED SCANNER ---
         st.subheader("📡 Live Strategy Signal Feed")
         signal_rows = []
         for name, asset in current_market.items():
             gann_up = "GANN UP" in asset["Gann Signal"]
             is_bullish = asset["is_bullish"]
             
-            # Check tracking status
             if name in st.session_state.stock_account["positions"]:
                 status = "💼 Already in Portfolio"
             elif is_bullish and gann_up:
@@ -181,11 +219,9 @@ if app_mode == "Automated Quant Fund Simulator":
             })
         st.dataframe(pd.DataFrame(signal_rows), hide_index=True, use_container_width=True)
 
-        # --- PORTFOLIO ORDER SUBMISSION INTERFACES ---
         st.markdown("---")
         st.subheader("🕹️ Equity Order Execution Pad")
         
-        # Filter down stocks that have an active buy signal and aren't owned yet
         available_buys = [r["Ticker"] for r in signal_rows if "BUY SIGNAL" in r["System Action Alert"]]
         
         col_exec1, col_exec2 = st.columns(2)
@@ -197,7 +233,6 @@ if app_mode == "Automated Quant Fund Simulator":
                     if st.session_state.stock_account["cash"] >= trade_size:
                         price_now = current_market[selected_buy]["Price"]
                         st.session_state.stock_account["cash"] -= trade_size
-                        # Lock it into memory permanently
                         st.session_state.stock_account["positions"][selected_buy] = {
                             "entry": price_now,
                             "size": trade_size,
@@ -236,8 +271,13 @@ if app_mode == "Automated Quant Fund Simulator":
             else:
                 st.info("No active stock positions to close manually.")
 
-        # --- BACKGROUND PROTECTION AUTOMATION (Stop Loss Tracker) ---
-        for name in list(st.session_state.stock_account["positions"].keys()):
+        # Safe key iteration to prevent mutating state while looping
+        positions_to_check = list(st.session_state.stock_account["positions"].keys())
+        triggered_stops = False
+        
+        for name in positions_to_check:
+            if name not in current_market:
+                continue
             pos = st.session_state.stock_account["positions"][name]
             price = current_market[name]["Price"]
             
@@ -255,15 +295,17 @@ if app_mode == "Automated Quant Fund Simulator":
                 st.session_state.stock_account["cash"] += liquidated_cash
                 del st.session_state.stock_account["positions"][name]
                 st.toast(f"CRITICAL RISK ACTION: {name} hit hard Stop Loss limit.")
-                st.rerun()
+                triggered_stops = True
 
-        # 4. LIVE ACCOUNT DASHBOARD METRICS DISPLAY
+        if triggered_stops:
+            st.rerun()
+
         open_positions = st.session_state.stock_account["positions"]
         current_floating_value = 0.0
         active_rows = []
         
         for name, pos in open_positions.items():
-            curr_price = current_market[name]["Price"]
+            curr_price = current_market.get(name, {}).get("Price", pos["entry"])
             pnl_pct = ((curr_price - pos["entry"]) / pos["entry"]) * 100
             pnl_cash = (pos["size"] / pos["entry"]) * (curr_price - pos["entry"])
             current_floating_value += (pos["size"] + pnl_cash)
@@ -289,7 +331,6 @@ if app_mode == "Automated Quant Fund Simulator":
         else:
             st.info("Your portfolio is currently empty. Use the order pad above to execute active signals.")
 
-        # 5. HISTORICAL RECORDS LEDGER
         st.markdown("---")
         st.subheader("📚 Historical Closed Ledger (Real-Time Performance Track)")
         if st.session_state.stock_account["ledger"]:
@@ -300,26 +341,54 @@ if app_mode == "Automated Quant Fund Simulator":
 
 elif app_mode == "Trend Momentum Screener":
     st.header(f"🟢 Elite Momentum Screener ({index_tier})")
-    with st.spinner("Processing Index Matrix..."): data_pool = fetch_master_dataset_pool(active_universe)
+    with st.spinner("Processing Index Matrix..."): 
+        data_pool = fetch_master_dataset_pool(active_universe)
     if data_pool:
-        filtered = pd.DataFrame(data_pool)[pd.DataFrame(data_pool)["is_bullish"]==True].sort_values(by="Dist 52W High %")
-        st.data_editor(filtered[['Name', 'Chart Link', 'Price', 'Gann Signal', 'Current Candle Type']], column_config={"Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), "Price": st.column_config.NumberColumn(format="$%.2f")}, disabled=True, hide_index=True, use_container_width=True)
+        df_pool = pd.DataFrame(data_pool)
+        filtered = df_pool[df_pool["is_bullish"] == True].sort_values(by="Dist 52W High %")
+        st.data_editor(
+            filtered[['Name', 'Chart Link', 'Price', 'Gann Signal', 'Current Candle Type']], 
+            column_config={
+                "Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), 
+                "Price": st.column_config.NumberColumn(format="$%.2f")
+            }, 
+            disabled=True, hide_index=True, use_container_width=True
+        )
 
 elif app_mode == "Fundamental Value Searcher":
     st.header(f"💎 Fundamental Balance Sheet Matrix ({index_tier})")
-    with st.spinner("Extracting Parameters..."): data_pool = fetch_master_dataset_pool(active_universe)
+    with st.spinner("Extracting Parameters..."): 
+        data_pool = fetch_master_dataset_pool(active_universe)
     if data_pool:
-        st.data_editor(pd.DataFrame(data_pool)[['Name', 'Chart Link', 'Price', 'Trailing P/E', 'Profit Margin %', 'Div Yield %']], column_config={"Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), "Price": st.column_config.NumberColumn(format="$%.2f"), "Profit Margin %": st.column_config.NumberColumn(format="%.2f%%"), "Div Yield %": st.column_config.NumberColumn(format="%.2f%%")}, disabled=True, hide_index=True, use_container_width=True)
+        st.data_editor(
+            pd.DataFrame(data_pool)[['Name', 'Chart Link', 'Price', 'Trailing P/E', 'Profit Margin %', 'Div Yield %']], 
+            column_config={
+                "Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), 
+                "Price": st.column_config.NumberColumn(format="$%.2f"), 
+                "Profit Margin %": st.column_config.NumberColumn(format="%.2f%%"), 
+                "Div Yield %": st.column_config.NumberColumn(format="%.2f%%")
+            }, 
+            disabled=True, hide_index=True, use_container_width=True
+        )
 
 elif app_mode == "WD Gann Mechanical Screener":
     st.header(f"🦅 Advanced WD Gann Structural Matrix ({index_tier})")
-    with st.spinner("Calculating Pivots..."): data_pool = fetch_master_dataset_pool(active_universe)
+    with st.spinner("Calculating Pivots..."): 
+        data_pool = fetch_master_dataset_pool(active_universe)
     if data_pool:
-        st.data_editor(pd.DataFrame(data_pool)[['Name', 'Chart Link', 'Gann Signal', 'Current Candle Type', 'Price']], column_config={"Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), "Price": st.column_config.NumberColumn(format="$%.2f")}, disabled=True, hide_index=True, use_container_width=True)
+        st.data_editor(
+            pd.DataFrame(data_pool)[['Name', 'Chart Link', 'Gann Signal', 'Current Candle Type', 'Price']], 
+            column_config={
+                "Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), 
+                "Price": st.column_config.NumberColumn(format="$%.2f")
+            }, 
+            disabled=True, hide_index=True, use_container_width=True
+        )
 
 elif app_mode == "Interactive Charting Workspace":
     st.header(f"📈 Core Deep Research Terminal: {clean_symbol}")
-    with st.spinner("Pulling real-time parameters..."): single_p = fetch_master_dataset_pool([target_ticker])
+    with st.spinner("Pulling real-time parameters..."): 
+        single_p = fetch_master_dataset_pool([target_ticker])
     if single_p:
         sd = single_p[0]
         c1, c2, c3, c4 = st.columns(4)
