@@ -160,18 +160,19 @@ def fetch_master_dataset_pool(ticker_list):
             dy_val = dy_raw * 100 if dy_raw is not None and isinstance(dy_raw, (int, float)) else np.nan
 
             compiled_results.append({
+                "Company Name": r_name,
                 "Ticker": tk, 
-                "Chart Link": l_url, 
-                "Name": r_name, 
+                "Price ($)": round(p_curr, 2), 
+                "Profit Margin %": round(pm_val, 2) if not np.isnan(pm_val) else 0.0, 
+                "Div Yield %": round(dy_val, 2) if not np.isnan(dy_val) else 0.0, 
+                "Trailing P/E": round(pe_val, 2) if not np.isnan(pe_val) else 0.0,
+                "Chart Link": l_url,
                 "Entry Price": p_prev, 
                 "Price": p_curr, 
                 "Dist 52W High %": d_high, 
                 "is_bullish": is_bull, 
                 "Gann Signal": g_sig, 
-                "Current Candle Type": b_type, 
-                "Trailing P/E": pe_val, 
-                "Profit Margin %": pm_val, 
-                "Div Yield %": dy_val
+                "Current Candle Type": b_type
             })
         except Exception: 
             continue
@@ -185,7 +186,7 @@ def fetch_master_dataset_pool(ticker_list):
 # --- WORKSPACE 1: FUNDAMENTAL & INSIDER SCREENER ---
 if app_mode == "Fundamental & Insider Screener":
     st.header(f"🏛️ Fundamental Stock Screener ({index_tier})")
-    st.caption("Screens assets by live Profit Margins and Dividend Yield metrics.")
+    st.caption("Adjust the sliders to manually filter stocks by Profit Margin and Dividend Yield.")
 
     with st.spinner("Fetching Market Data..."):
         data_pool = fetch_master_dataset_pool(active_universe)
@@ -193,33 +194,37 @@ if app_mode == "Fundamental & Insider Screener":
     if data_pool:
         df_fund = pd.DataFrame(data_pool)
         
-        # User Controls
+        # User Filter Sliders
         c1, c2 = st.columns(2)
         with c1:
             min_margin = st.slider("Filter Minimum Profit Margin %", -50.0, 50.0, -50.0, 1.0)
         with c2:
             min_div = st.slider("Filter Minimum Dividend Yield %", 0.0, 15.0, 0.0, 0.5)
 
-        # Filter out NaN rows cleanly for sliders
-        df_display = df_fund.copy()
-        
-        # Apply Sliders
-        filtered_df = df_display[
-            (df_display["Profit Margin %"].fillna(-999) >= min_margin) & 
-            (df_display["Div Yield %"].fillna(0) >= min_div)
-        ]
+        # Apply Filters
+        filtered_df = df_fund[
+            (df_fund["Profit Margin %"] >= min_margin) & 
+            (df_fund["Div Yield %"] >= min_div)
+        ].copy()
 
         st.divider()
         m1, m2 = st.columns(2)
-        m1.metric("Total Assets Fetched", len(df_fund))
+        m1.metric("Total Assets Screened", len(df_fund))
         m2.metric("Filtered Results", len(filtered_df))
 
-        # Render Table Directly
-        st.dataframe(
-            filtered_df[['Name', 'Ticker', 'Price', 'Profit Margin %', 'Div Yield %', 'Trailing P/E', 'Chart Link']],
-            use_container_width=True,
-            hide_index=True
-        )
+        # Render Clean Table View
+        if not filtered_df.empty:
+            display_columns = ["Company Name", "Ticker", "Price ($)", "Profit Margin %", "Div Yield %", "Trailing P/E", "Chart Link"]
+            st.dataframe(
+                filtered_df[display_columns],
+                column_config={
+                    "Chart Link": st.column_config.LinkColumn("TradingView Chart", display_text="📈 View Chart")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+        else:
+            st.info("No stocks match the selected slider thresholds. Try lowering the sliders.")
 
 # --- WORKSPACE 2: AUTOMATED QUANT FUND SIMULATOR ---
 elif app_mode == "Automated Quant Fund Simulator":
@@ -240,7 +245,7 @@ elif app_mode == "Automated Quant Fund Simulator":
         data_pool = fetch_master_dataset_pool(active_universe)
 
     if data_pool:
-        current_market = {item["Name"]: item for item in data_pool}
+        current_market = {item["Company Name"]: item for item in data_pool}
         
         st.subheader("📡 Live Strategy Signal Feed")
         signal_rows = []
@@ -355,8 +360,8 @@ elif app_mode == "Trend Momentum Screener":
         df_pool = pd.DataFrame(data_pool)
         filtered = df_pool[df_pool["is_bullish"] == True].sort_values(by="Dist 52W High %")
         st.data_editor(
-            filtered[['Name', 'Chart Link', 'Price', 'Gann Signal', 'Current Candle Type']], 
-            column_config={"Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), "Price": st.column_config.NumberColumn(format="$%.2f")}, 
+            filtered[['Company Name', 'Chart Link', 'Price ($)', 'Gann Signal', 'Current Candle Type']], 
+            column_config={"Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View")}, 
             disabled=True, hide_index=True, use_container_width=True
         )
 
@@ -367,12 +372,9 @@ elif app_mode == "Fundamental Value Searcher":
         data_pool = fetch_master_dataset_pool(active_universe)
     if data_pool:
         st.data_editor(
-            pd.DataFrame(data_pool)[['Name', 'Chart Link', 'Price', 'Trailing P/E', 'Profit Margin %', 'Div Yield %']], 
+            pd.DataFrame(data_pool)[['Company Name', 'Chart Link', 'Price ($)', 'Trailing P/E', 'Profit Margin %', 'Div Yield %']], 
             column_config={
-                "Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), 
-                "Price": st.column_config.NumberColumn(format="$%.2f"), 
-                "Profit Margin %": st.column_config.NumberColumn(format="%.2f%%"), 
-                "Div Yield %": st.column_config.NumberColumn(format="%.2f%%")
+                "Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View")
             }, 
             disabled=True, hide_index=True, use_container_width=True
         )
@@ -384,8 +386,8 @@ elif app_mode == "WD Gann Mechanical Screener":
         data_pool = fetch_master_dataset_pool(active_universe)
     if data_pool:
         st.data_editor(
-            pd.DataFrame(data_pool)[['Name', 'Chart Link', 'Gann Signal', 'Current Candle Type', 'Price']], 
-            column_config={"Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View"), "Price": st.column_config.NumberColumn(format="$%.2f")}, 
+            pd.DataFrame(data_pool)[['Company Name', 'Chart Link', 'Gann Signal', 'Current Candle Type', 'Price ($)']], 
+            column_config={"Chart Link": st.column_config.LinkColumn("Chart", display_text="📈 View")}, 
             disabled=True, hide_index=True, use_container_width=True
         )
 
