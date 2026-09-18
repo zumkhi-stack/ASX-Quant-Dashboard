@@ -169,9 +169,9 @@ def fetch_master_dataset_pool(ticker_list):
                 "is_bullish": is_bull, 
                 "Gann Signal": g_sig, 
                 "Current Candle Type": b_type, 
-                "Trailing P/E": pe_val if not np.isnan(pe_val) else 0.0, 
-                "Profit Margin %": pm_val if not np.isnan(pm_val) else -999.0, 
-                "Div Yield %": dy_val if not np.isnan(dy_val) else 0.0
+                "Trailing P/E": pe_val, 
+                "Profit Margin %": pm_val, 
+                "Div Yield %": dy_val
             })
         except Exception: 
             continue
@@ -184,50 +184,42 @@ def fetch_master_dataset_pool(ticker_list):
 
 # --- WORKSPACE 1: FUNDAMENTAL & INSIDER SCREENER ---
 if app_mode == "Fundamental & Insider Screener":
-    st.header(f"🏛️ Custom Fundamental Screener ({index_tier})")
-    st.caption("Adjust the sliders below to manually screen stocks by profit margins and dividend yield.")
+    st.header(f"🏛️ Fundamental Stock Screener ({index_tier})")
+    st.caption("Screens assets by live Profit Margins and Dividend Yield metrics.")
 
-    with st.spinner("Extracting Market Fundamentals..."):
+    with st.spinner("Fetching Market Data..."):
         data_pool = fetch_master_dataset_pool(active_universe)
 
     if data_pool:
         df_fund = pd.DataFrame(data_pool)
         
-        # Interactive Manual Controls
+        # User Controls
         c1, c2 = st.columns(2)
         with c1:
-            min_margin = st.slider("Min Profit Margin %", min_value=-50.0, max_value=50.0, value=0.0, step=1.0)
+            min_margin = st.slider("Filter Minimum Profit Margin %", -50.0, 50.0, -50.0, 1.0)
         with c2:
-            min_div = st.slider("Min Dividend Yield %", min_value=0.0, max_value=15.0, value=0.0, step=0.5)
+            min_div = st.slider("Filter Minimum Dividend Yield %", 0.0, 15.0, 0.0, 0.5)
 
-        # Apply User Filters
-        filtered_df = df_fund[
-            (df_fund["Profit Margin %"] >= min_margin) & 
-            (df_fund["Div Yield %"] >= min_div)
-        ].copy()
+        # Filter out NaN rows cleanly for sliders
+        df_display = df_fund.copy()
+        
+        # Apply Sliders
+        filtered_df = df_display[
+            (df_display["Profit Margin %"].fillna(-999) >= min_margin) & 
+            (df_display["Div Yield %"].fillna(0) >= min_div)
+        ]
 
-        # Display Metrics
         st.divider()
         m1, m2 = st.columns(2)
-        m1.metric("Total Stocks Screened", len(df_fund))
-        m2.metric("Matching Strategy Criteria", len(filtered_df))
+        m1.metric("Total Assets Fetched", len(df_fund))
+        m2.metric("Filtered Results", len(filtered_df))
 
-        # Render Data Table cleanly
-        if not filtered_df.empty:
-            st.dataframe(
-                filtered_df[['Name', 'Ticker', 'Price', 'Profit Margin %', 'Div Yield %', 'Trailing P/E', 'Chart Link']],
-                column_config={
-                    "Chart Link": st.column_config.LinkColumn("TradingView Chart", display_text="📈 View"),
-                    "Price": st.column_config.NumberColumn("Price ($)", format="$%.2f"),
-                    "Profit Margin %": st.column_config.NumberColumn("Profit Margin %", format="%.2f%%"),
-                    "Div Yield %": st.column_config.NumberColumn("Dividend Yield %", format="%.2f%%"),
-                    "Trailing P/E": st.column_config.NumberColumn("Trailing P/E", format="%.2f")
-                },
-                hide_index=True,
-                use_container_width=True
-            )
-        else:
-            st.info("No stocks match the selected slider thresholds. Try lowering the Min Profit Margin slider.")
+        # Render Table Directly
+        st.dataframe(
+            filtered_df[['Name', 'Ticker', 'Price', 'Profit Margin %', 'Div Yield %', 'Trailing P/E', 'Chart Link']],
+            use_container_width=True,
+            hide_index=True
+        )
 
 # --- WORKSPACE 2: AUTOMATED QUANT FUND SIMULATOR ---
 elif app_mode == "Automated Quant Fund Simulator":
